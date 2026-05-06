@@ -608,6 +608,21 @@ function countAgentQuestions(history) {
   return normalizeHistory(history).filter((entry) => entry.role === "model" && entry.text.includes("?")).length;
 }
 
+function isMixedIntent(text) {
+  const lower = String(text || "").trim().toLowerCase();
+  return /\b(no|not sure|maybe)\b.*\b(but|okay|ok|fine|go ahead|tell me|continue|still|maybe|sure)\b/i.test(lower);
+}
+
+function isClearRejection(text) {
+  const lower = String(text || "").trim().toLowerCase();
+  if (!lower) return false;
+  if (isMixedIntent(lower)) return false;
+  return (
+    /^(no|nope|nah|no sorry|sorry no|not interested|stop|end|bye|goodbye|hang up)[\s.!?,]*$/i.test(lower) ||
+    /\b(not interested|stop calling|don't call|do not call|hang up|end the call|bye|goodbye)\b/i.test(lower)
+  );
+}
+
 function getLocalAgentReply(customerText, history = []) {
   const text = String(customerText || "").trim();
   const lower = text.toLowerCase();
@@ -625,8 +640,12 @@ function getLocalAgentReply(customerText, history = []) {
     return "Great. We usually help when teams are outgrowing Excel, WhatsApp, or disconnected software. Would a 10-minute demo be useful?";
   }
 
-  if (/\b(no|nope|nah|sorry|not interested|bye|goodbye|end|hang up|stop)\b/i.test(lower)) {
+  if (isClearRejection(lower)) {
     return "No worries, thanks for your time. Have a good day. [END_CALL]";
+  }
+
+  if (isMixedIntent(lower)) {
+    return "No problem, I will keep it brief. DP vision mainly helps teams clean up scattered tools and reports. A short demo can show the fit.";
   }
 
   if (/\b(who|what.*company|about|do you do|dpvision|dp vision|service|services)\b/i.test(lower)) {
@@ -814,6 +833,7 @@ function isAffirmative(text) {
 }
 
 function isNegative(text) {
+  if (isMixedIntent(text)) return false;
   return /\b(no|nope|not now|later|different|another|won't work|doesn't work)\b/i.test(text);
 }
 
