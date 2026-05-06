@@ -408,7 +408,7 @@ function getPromptText() {
   const resolvedPath = path.resolve(process.cwd(), promptPath);
   if (!fs.existsSync(resolvedPath)) {
     return [
-      "Hey, it's Pooja. How's your day going?",
+      "Hi, this is Pooja from DP vision Analytics. How are you doing today?",
       "",
       "You are Pooja. Talk like a real, relaxed person on a phone call. Keep the conversation natural, warm, and unscripted. Reply to what the caller actually said before doing anything else. If they greet you, greet them back and keep it light. If they ask how you are, answer casually and ask something small back. Do not jump into a pitch unless they invite it. Do not repeat the same line. Do not sound like a brochure, a helpdesk, or a sales script. Always spell the company name as DP vision Analytics. If the caller asks about the company, you can explain it briefly, but keep the tone conversational. If they ask something unrelated, respond naturally and keep the flow going. If they want to end the call, close politely and include [END_CALL].",
     ].join("\n");
@@ -421,7 +421,7 @@ function splitPrompt(rawPrompt) {
   const openerIndex = lines.findIndex((line) => line.trim().length > 0);
   if (openerIndex === -1) {
     return {
-      openingLine: "Hey, it's Pooja. How's your day going?",
+      openingLine: "Hi, this is Pooja from DP vision Analytics. How are you doing today?",
       systemPrompt: "",
     };
   }
@@ -662,11 +662,35 @@ function isDemoConsent(text) {
   );
 }
 
+function wasAskedHowTheyAre(history) {
+  return Array.isArray(history) && history.some((entry) => {
+    const role = String(entry?.role || "").toLowerCase();
+    const text = String(entry?.text || "");
+    return (
+      (role === "model" || role === "assistant" || role === "agent") &&
+      /\bhow are you|how are you doing|how's your day/i.test(text)
+    );
+  });
+}
+
+function isWellbeingAnswer(text) {
+  return /\b(good|great|fine|okay|ok|well|doing well|not bad|alright|all good|bad|busy|tired)\b/i.test(
+    String(text || "").trim()
+  );
+}
+
 function getLocalAgentReply(customerText, history = []) {
   const text = String(customerText || "").trim();
   const lower = text.toLowerCase();
   const agentQuestionCount = countAgentQuestions(history);
   const offeredDemo = wasAsked(history, /10-minute demo|short demo|demo/i);
+
+  if (wasAskedHowTheyAre(history) && isWellbeingAnswer(lower)) {
+    if (/\b(bad|busy|tired|not good)\b/i.test(lower)) {
+      return "Sorry to hear that. I will keep this brief: DP vision helps businesses clean up scattered tools, reports, and follow-ups.";
+    }
+    return "Glad to hear. I will keep this brief: DP vision helps businesses clean up scattered tools, reports, and follow-ups.";
+  }
 
   if (!text || /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text)) {
     if (hasIntroducedPooja(history)) {
@@ -803,6 +827,27 @@ async function getGeminiReply(callSid, customerText) {
     conversation.push({ role: "user", text: "Hello" });
   }
 
+  const firstTurnIsWellbeingAnswer =
+    conversation.length === 1 &&
+    conversation[0]?.role === "user" &&
+    conversation[0]?.text === userText &&
+    isWellbeingAnswer(userText);
+
+  if (firstTurnIsWellbeingAnswer) {
+    const openerContext = [{ role: "model", text: "Hi, this is Pooja from DP vision Analytics. How are you doing today?" }];
+    const wellbeingReply = removeRepeatedIntroduction(
+      normalizeCompanyName(getLocalAgentReply(userText, openerContext)),
+      openerContext
+    );
+    callHistories.set(
+      callSid,
+      openerContext
+        .concat([{ role: "user", text: userText }, { role: "model", text: wellbeingReply }])
+        .slice(-MAX_HISTORY_TURNS)
+    );
+    return wellbeingReply;
+  }
+
   if (isClearRejection(userText)) {
     const closingReply = normalizeCompanyName(getLocalAgentReply(userText, conversation));
     callHistories.set(
@@ -812,6 +857,17 @@ async function getGeminiReply(callSid, customerText) {
         .slice(-MAX_HISTORY_TURNS)
     );
     return removeRepeatedIntroduction(closingReply, conversation);
+  }
+
+  if (wasAskedHowTheyAre(conversation) && isWellbeingAnswer(userText)) {
+    const wellbeingReply = removeRepeatedIntroduction(normalizeCompanyName(getLocalAgentReply(userText, conversation)), conversation);
+    callHistories.set(
+      callSid,
+      conversation
+        .concat([{ role: "model", text: wellbeingReply }])
+        .slice(-MAX_HISTORY_TURNS)
+    );
+    return wellbeingReply;
   }
 
   const candidates = await ensureModelCandidates();

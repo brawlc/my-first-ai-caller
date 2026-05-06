@@ -57,7 +57,7 @@ type LivePhoneCall = {
   events?: LivePhoneCallEvent[];
 };
 
-const defaultOpeningLine = "Hey, it's Pooja. What's up?";
+const defaultOpeningLine = "Hi, this is Pooja from DP vision Analytics. How are you doing today?";
 const LIVE_CALL_SESSION_KEY = 'dpvision_live_call_session_v1';
 const LIVE_AGENT_SESSION_ID_KEY = 'dpvision_live_agent_session_id_v1';
 const IDLE_CHECK_DELAY_MS = 18000;
