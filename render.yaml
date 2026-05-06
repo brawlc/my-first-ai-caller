@@ -30,6 +30,8 @@ services:
         value: twilio
       - key: MONGODB_DB_NAME
         value: dpvision_pooja_ai
+      - key: MONGODB_TLS_ALLOW_INVALID_CERTIFICATES
+        value: false
       - key: MONGODB_URI
         sync: false
       - key: GEMINI_API_KEY

@@ -25,6 +25,8 @@ const SIP_AUTH_USERNAME = String(process.env.SIP_AUTH_USERNAME || "").trim();
 const SIP_AUTH_PASSWORD = String(process.env.SIP_AUTH_PASSWORD || "").trim();
 const MONGODB_URI = String(process.env.MONGODB_URI || "").trim();
 const MONGODB_DB_NAME = String(process.env.MONGODB_DB_NAME || "dpvision_pooja_ai").trim();
+const MONGODB_TLS_ALLOW_INVALID_CERTIFICATES =
+  String(process.env.MONGODB_TLS_ALLOW_INVALID_CERTIFICATES || "false").trim().toLowerCase() === "true";
 const promptPath = process.env.DPVISION_AGENT_PROMPT_FILE || "agent-prompt.txt";
 const FALLBACK_REPLY =
   "I can still help with the basics while the AI quota resets. Tell me what you need, or share a date, time, and email for a demo.";
@@ -158,6 +160,21 @@ function serializeLead(lead = {}) {
   };
 }
 
+function summarizeMongoError(error) {
+  const message = readErrorMessage(error);
+  const lower = message.toLowerCase();
+  if (lower.includes("ssl") || lower.includes("tls")) {
+    return "MongoDB TLS connection failed. Check that MONGODB_URI is the full mongodb+srv Atlas driver string, the password is correct, Atlas Network Access allows Render, and try setting MONGODB_TLS_ALLOW_INVALID_CERTIFICATES=true if Atlas still rejects TLS.";
+  }
+  if (lower.includes("authentication failed") || lower.includes("bad auth")) {
+    return "MongoDB authentication failed. Check the database username and password in MONGODB_URI.";
+  }
+  if (lower.includes("querysrv") || lower.includes("enotfound")) {
+    return "MongoDB host lookup failed. Check that MONGODB_URI is copied from Atlas Drivers and starts with mongodb+srv://.";
+  }
+  return message;
+}
+
 async function getMongoDb() {
   if (!MONGODB_URI) {
     const error = new Error("MONGODB_URI is not configured.");
@@ -166,7 +183,10 @@ async function getMongoDb() {
   }
 
   if (!mongoClientPromise) {
-    const client = new MongoClient(MONGODB_URI);
+    const client = new MongoClient(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+      tlsAllowInvalidCertificates: MONGODB_TLS_ALLOW_INVALID_CERTIFICATES,
+    });
     mongoClientPromise = client.connect();
   }
 
@@ -1328,7 +1348,7 @@ async function startServer() {
     try {
       res.json({ ok: true, leads: await listStoredLeads() });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+      res.status(error.statusCode || 500).json({ ok: false, error: summarizeMongoError(error) });
     }
   });
 
@@ -1343,7 +1363,7 @@ async function startServer() {
       );
       res.json({ ok: true, lead: serializeLead(lead) });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+      res.status(error.statusCode || 500).json({ ok: false, error: summarizeMongoError(error) });
     }
   });
 
@@ -1365,7 +1385,7 @@ async function startServer() {
       }
       res.json({ ok: true, leads: await listStoredLeads() });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+      res.status(error.statusCode || 500).json({ ok: false, error: summarizeMongoError(error) });
     }
   });
 
@@ -1381,7 +1401,7 @@ async function startServer() {
       }
       res.json({ ok: true, lead: serializeLead(lead) });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+      res.status(error.statusCode || 500).json({ ok: false, error: summarizeMongoError(error) });
     }
   });
 
@@ -1392,7 +1412,7 @@ async function startServer() {
       await collection.deleteOne({ id });
       res.json({ ok: true, id });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+      res.status(error.statusCode || 500).json({ ok: false, error: summarizeMongoError(error) });
     }
   });
 
