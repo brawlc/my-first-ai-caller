@@ -3,6 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
+import { MongoClient } from "mongodb";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -22,6 +23,8 @@ const DIALER_MODE = String(process.env.DIALER_MODE || "twilio").trim().toLowerCa
 const SIP_TRUNK_DOMAIN = String(process.env.SIP_TRUNK_DOMAIN || "").trim();
 const SIP_AUTH_USERNAME = String(process.env.SIP_AUTH_USERNAME || "").trim();
 const SIP_AUTH_PASSWORD = String(process.env.SIP_AUTH_PASSWORD || "").trim();
+const MONGODB_URI = String(process.env.MONGODB_URI || "").trim();
+const MONGODB_DB_NAME = String(process.env.MONGODB_DB_NAME || "dpvision_pooja_ai").trim();
 const promptPath = process.env.DPVISION_AGENT_PROMPT_FILE || "agent-prompt.txt";
 const FALLBACK_REPLY =
   "I can still help with the basics while the AI quota resets. Tell me what you need, or share a date, time, and email for a demo.";
@@ -44,6 +47,7 @@ const generationDefaults = {
 };
 const schedulingStates = new Map();
 const androidSessions = new Map();
+let mongoClientPromise = null;
 const GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3";
 const MAX_HISTORY_TURNS = 20;
 const ANDROID_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
@@ -117,6 +121,70 @@ function buildLiveCallPayload(session) {
     endedAt: session.endedAt,
     events: session.events || [],
   };
+}
+
+function isValidLeadStatus(status) {
+  return ["pending", "called", "converted", "failed"].includes(status);
+}
+
+function normalizeLead(input = {}) {
+  const id = String(input.id || `lead-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`).trim();
+  const status = String(input.status || "pending").trim().toLowerCase();
+  return {
+    id,
+    name: String(input.name || "Unknown").trim() || "Unknown",
+    company: String(input.company || "Unknown").trim() || "Unknown",
+    email: String(input.email || "").trim(),
+    phone: String(input.phone || "").trim(),
+    status: isValidLeadStatus(status) ? status : "pending",
+    sentiment: input.sentiment ? String(input.sentiment).trim() : "",
+    notes: input.notes ? String(input.notes).trim() : "",
+    lastCallDate: input.lastCallDate ? String(input.lastCallDate).trim() : "",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function serializeLead(lead = {}) {
+  return {
+    id: String(lead.id || ""),
+    name: String(lead.name || "Unknown"),
+    company: String(lead.company || "Unknown"),
+    email: String(lead.email || ""),
+    phone: String(lead.phone || ""),
+    status: isValidLeadStatus(lead.status) ? lead.status : "pending",
+    sentiment: lead.sentiment || undefined,
+    notes: lead.notes || undefined,
+    lastCallDate: lead.lastCallDate || undefined,
+  };
+}
+
+async function getMongoDb() {
+  if (!MONGODB_URI) {
+    const error = new Error("MONGODB_URI is not configured.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  if (!mongoClientPromise) {
+    const client = new MongoClient(MONGODB_URI);
+    mongoClientPromise = client.connect();
+  }
+
+  const client = await mongoClientPromise;
+  return client.db(MONGODB_DB_NAME);
+}
+
+async function getLeadsCollection() {
+  const db = await getMongoDb();
+  const collection = db.collection("leads");
+  await collection.createIndex({ id: 1 }, { unique: true });
+  return collection;
+}
+
+async function listStoredLeads() {
+  const collection = await getLeadsCollection();
+  const leads = await collection.find({}, { projection: { _id: 0 } }).sort({ updatedAt: -1 }).toArray();
+  return leads.map(serializeLead);
 }
 
 function getLatestLiveCallSession() {
@@ -1234,7 +1302,80 @@ async function startServer() {
       mode: ai ? "gemini" : "local fallback",
       androidGatewayReady: true,
       activeAndroidSessions: androidSessions.size,
+      mongoReady: Boolean(MONGODB_URI),
     });
+  });
+
+  app.get("/api/leads", async (_req, res) => {
+    try {
+      res.json({ ok: true, leads: await listStoredLeads() });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+    }
+  });
+
+  app.post("/api/leads", async (req, res) => {
+    try {
+      const collection = await getLeadsCollection();
+      const lead = normalizeLead(req.body || {});
+      await collection.updateOne(
+        { id: lead.id },
+        { $set: lead, $setOnInsert: { createdAt: new Date().toISOString() } },
+        { upsert: true }
+      );
+      res.json({ ok: true, lead: serializeLead(lead) });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+    }
+  });
+
+  app.post("/api/leads/import", async (req, res) => {
+    try {
+      const incomingLeads = Array.isArray(req.body?.leads) ? req.body.leads : [];
+      const leads = incomingLeads.map(normalizeLead);
+      const collection = await getLeadsCollection();
+      if (leads.length) {
+        await collection.bulkWrite(
+          leads.map((lead) => ({
+            updateOne: {
+              filter: { id: lead.id },
+              update: { $set: lead, $setOnInsert: { createdAt: new Date().toISOString() } },
+              upsert: true,
+            },
+          }))
+        );
+      }
+      res.json({ ok: true, leads: await listStoredLeads() });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+    }
+  });
+
+  app.put("/api/leads/:id", async (req, res) => {
+    try {
+      const id = String(req.params.id || "").trim();
+      const collection = await getLeadsCollection();
+      const lead = normalizeLead({ ...(req.body || {}), id });
+      const result = await collection.updateOne({ id }, { $set: lead });
+      if (!result.matchedCount) {
+        res.status(404).json({ ok: false, error: "Lead not found." });
+        return;
+      }
+      res.json({ ok: true, lead: serializeLead(lead) });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+    }
+  });
+
+  app.delete("/api/leads/:id", async (req, res) => {
+    try {
+      const id = String(req.params.id || "").trim();
+      const collection = await getLeadsCollection();
+      await collection.deleteOne({ id });
+      res.json({ ok: true, id });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ ok: false, error: readErrorMessage(error) });
+    }
   });
 
   app.get("/api/agent-prompt", (_req, res) => {

@@ -20,6 +20,10 @@ services:
         value: Polly.Aditi
       - key: DIALER_MODE
         value: twilio
+      - key: MONGODB_DB_NAME
+        value: dpvision_pooja_ai
+      - key: MONGODB_URI
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: VITE_CLIENT_ID

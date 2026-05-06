@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, Download, Search, MoreVertical, Plus, CalendarPlus, X, Pencil, Trash2 } from 'lucide-react';
 import { Lead } from '../types';
@@ -12,6 +12,13 @@ type CalendarStatus = {
 };
 
 type LeadForm = Pick<Lead, 'id' | 'name' | 'company' | 'email' | 'phone' | 'status'>;
+
+const DEFAULT_LEADS: Lead[] = [
+  { id: '1', name: 'James Wilson', company: 'TechFlow Inc', email: 'james@techflow.com', phone: '+1 555-0123', status: 'pending' },
+  { id: '2', name: 'Maria Garcia', company: 'Global Logistics', email: 'maria@globallog.com', phone: '+1 555-4567', status: 'converted', sentiment: 'Positive' },
+  { id: '3', name: 'Robert Chen', company: 'Apex Solutions', email: 'robert@apex.io', phone: '+1 555-8901', status: 'failed', sentiment: 'Irritated' },
+  { id: '4', name: 'Anna Schmidt', company: 'Berlin Dynamics', email: 'anna@berlin-dyn.de', phone: '+49 123 45678', status: 'called', sentiment: 'Neutral' },
+];
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'pending', label: 'Pending' },
@@ -49,12 +56,7 @@ function parseLeadStatus(value: unknown): LeadStatus {
 }
 
 export const LeadManager = () => {
-  const [leads, setLeads] = useState<Lead[]>([
-    { id: '1', name: 'James Wilson', company: 'TechFlow Inc', email: 'james@techflow.com', phone: '+1 555-0123', status: 'pending' },
-    { id: '2', name: 'Maria Garcia', company: 'Global Logistics', email: 'maria@globallog.com', phone: '+1 555-4567', status: 'converted', sentiment: 'Positive' },
-    { id: '3', name: 'Robert Chen', company: 'Apex Solutions', email: 'robert@apex.io', phone: '+1 555-8901', status: 'failed', sentiment: 'Irritated' },
-    { id: '4', name: 'Anna Schmidt', company: 'Berlin Dynamics', email: 'anna@berlin-dyn.de', phone: '+49 123 45678', status: 'called', sentiment: 'Neutral' },
-  ]);
+  const [leads, setLeads] = useState<Lead[]>(DEFAULT_LEADS);
 
   const [searchText, setSearchText] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -64,6 +66,7 @@ export const LeadManager = () => {
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
+  const [dataStatus, setDataStatus] = useState<CalendarStatus | null>({ tone: 'neutral', text: 'Loading leads...' });
   const [openActionLeadId, setOpenActionLeadId] = useState<string | null>(null);
   const [editingLead, setEditingLead] = useState<LeadForm | null>(null);
 
@@ -82,12 +85,38 @@ export const LeadManager = () => {
     });
   }, [leads, searchText]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLeads = async () => {
+      try {
+        const response = await fetch('/api/leads');
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Could not load MongoDB leads.');
+        }
+        if (!isMounted) return;
+        setLeads(Array.isArray(payload.leads) && payload.leads.length ? payload.leads : DEFAULT_LEADS);
+        setDataStatus({ tone: 'success', text: 'MongoDB connected. Leads are syncing.' });
+      } catch (error) {
+        if (!isMounted) return;
+        const message = error instanceof Error ? error.message : 'Could not load MongoDB leads.';
+        setDataStatus({ tone: 'error', text: `${message} Using sample leads until MongoDB is configured.` });
+      }
+    };
+
+    void loadLeads();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const bstr = evt.target?.result;
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
@@ -103,7 +132,21 @@ export const LeadManager = () => {
         status: parseLeadStatus(item.Status || item.status),
       }));
 
-      setLeads((prev) => [...prev, ...newLeads]);
+      try {
+        const response = await fetch('/api/leads/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leads: newLeads }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Import failed.');
+        setLeads(payload.leads);
+        setDataStatus({ tone: 'success', text: `Imported ${newLeads.length} leads into MongoDB.` });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Import failed.';
+        setLeads((prev) => [...prev, ...newLeads]);
+        setDataStatus({ tone: 'error', text: `${message} Imported leads are only in this browser session.` });
+      }
     };
     reader.readAsBinaryString(file);
   };
@@ -115,8 +158,26 @@ export const LeadManager = () => {
     XLSX.writeFile(wb, 'Aura_Leads_Export.xlsx');
   };
 
-  const updateLeadStatus = (leadId: string, status: LeadStatus) => {
+  const updateLeadStatus = async (leadId: string, status: LeadStatus) => {
+    const previousLeads = leads;
+    const nextLead = leads.find((lead) => lead.id === leadId);
+    if (!nextLead) return;
+
     setLeads((prev) => prev.map((lead) => (lead.id === leadId ? { ...lead, status } : lead)));
+    try {
+      const response = await fetch(`/api/leads/${encodeURIComponent(leadId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...nextLead, status }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Could not update lead.');
+      setDataStatus({ tone: 'success', text: 'Lead status saved to MongoDB.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update lead.';
+      setLeads(previousLeads);
+      setDataStatus({ tone: 'error', text: message });
+    }
   };
 
   const openEditLead = (lead: Lead) => {
@@ -135,7 +196,19 @@ export const LeadManager = () => {
     setEditingLead(null);
   };
 
-  const saveEditedLead = () => {
+  const openNewLead = () => {
+    setEditingLead({
+      id: `lead-${Date.now()}`,
+      name: '',
+      company: '',
+      email: '',
+      phone: '',
+      status: 'pending',
+    });
+    setOpenActionLeadId(null);
+  };
+
+  const saveEditedLead = async () => {
     if (!editingLead) return;
     const nextLead = {
       ...editingLead,
@@ -145,17 +218,43 @@ export const LeadManager = () => {
       phone: editingLead.phone.trim(),
     };
 
-    setLeads((prev) => prev.map((lead) => (lead.id === nextLead.id ? { ...lead, ...nextLead } : lead)));
-    setSelectedLead((lead) => (lead?.id === nextLead.id ? { ...lead, ...nextLead } : lead));
-    setEditingLead(null);
+    const exists = leads.some((lead) => lead.id === nextLead.id);
+    try {
+      const response = await fetch(exists ? `/api/leads/${encodeURIComponent(nextLead.id)}` : '/api/leads', {
+        method: exists ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextLead),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Could not save lead.');
+      const savedLead = payload.lead as Lead;
+      setLeads((prev) => (exists ? prev.map((lead) => (lead.id === savedLead.id ? { ...lead, ...savedLead } : lead)) : [savedLead, ...prev]));
+      setSelectedLead((lead) => (lead?.id === savedLead.id ? { ...lead, ...savedLead } : lead));
+      setEditingLead(null);
+      setDataStatus({ tone: 'success', text: 'Lead saved to MongoDB.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save lead.';
+      setDataStatus({ tone: 'error', text: message });
+    }
   };
 
-  const deleteLead = (lead: Lead) => {
+  const deleteLead = async (lead: Lead) => {
     const shouldDelete = window.confirm(`Delete ${lead.name}?`);
     if (!shouldDelete) return;
+    const previousLeads = leads;
     setLeads((prev) => prev.filter((item) => item.id !== lead.id));
     setSelectedLead((selected) => (selected?.id === lead.id ? null : selected));
     setOpenActionLeadId(null);
+    try {
+      const response = await fetch(`/api/leads/${encodeURIComponent(lead.id)}`, { method: 'DELETE' });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Could not delete lead.');
+      setDataStatus({ tone: 'success', text: 'Lead deleted from MongoDB.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete lead.';
+      setLeads(previousLeads);
+      setDataStatus({ tone: 'error', text: message });
+    }
   };
 
   const connectCalendar = async () => {
@@ -273,6 +372,20 @@ export const LeadManager = () => {
         </div>
       )}
 
+      {dataStatus && (
+        <div
+          className={`px-4 py-3 rounded-xl border text-xs ${
+            dataStatus.tone === 'success'
+              ? 'bg-green-600/10 border-green-500/30 text-green-200'
+              : dataStatus.tone === 'error'
+                ? 'bg-amber-600/10 border-amber-500/30 text-amber-200'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-200'
+          }`}
+        >
+          {dataStatus.text}
+        </div>
+      )}
+
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 bento-card p-0 overflow-hidden">
           <div className="p-4 border-b border-zinc-800 bg-zinc-900/50 flex items-center gap-4">
@@ -286,7 +399,7 @@ export const LeadManager = () => {
                 className="w-full pl-10 pr-4 py-2 bg-zinc-950/50 border border-zinc-800 rounded-lg text-xs font-mono focus:outline-none focus:border-cyan-500/50 transition-colors"
               />
             </div>
-            <button className="px-4 py-2 bg-cyan-600 text-white rounded-lg text-[10px] font-bold uppercase">
+            <button onClick={openNewLead} className="px-4 py-2 bg-cyan-600 text-white rounded-lg text-[10px] font-bold uppercase">
               <Plus size={14} className="inline mr-1" /> Add Lead
             </button>
           </div>
@@ -324,7 +437,7 @@ export const LeadManager = () => {
                     <td className="px-6 py-4 text-center">
                       <select
                         value={lead.status}
-                        onChange={(e) => updateLeadStatus(lead.id, e.target.value as LeadStatus)}
+                        onChange={(e) => void updateLeadStatus(lead.id, e.target.value as LeadStatus)}
                         className={`min-w-28 rounded-full border px-3 py-1 text-[9px] font-bold uppercase tracking-widest outline-none transition-colors ${STATUS_CLASSES[lead.status]}`}
                       >
                         {STATUS_OPTIONS.map((option) => (
@@ -361,7 +474,7 @@ export const LeadManager = () => {
                                 Edit Lead
                               </button>
                               <button
-                                onClick={() => deleteLead(lead)}
+                                onClick={() => void deleteLead(lead)}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[10px] font-bold uppercase text-red-300 hover:bg-red-500/10"
                               >
                                 <Trash2 size={12} />
@@ -511,7 +624,7 @@ export const LeadManager = () => {
                 Cancel
               </button>
               <button
-                onClick={saveEditedLead}
+                onClick={() => void saveEditedLead()}
                 className="px-4 py-2 rounded-lg border border-cyan-500/40 bg-cyan-600 text-white text-xs font-bold uppercase hover:bg-cyan-500"
               >
                 Save Lead
