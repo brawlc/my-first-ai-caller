@@ -549,7 +549,7 @@ function getLocalAgentReply(customerText) {
   const lower = text.toLowerCase();
 
   if (!text || /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text)) {
-    return "Hi, this is Pooja from DP vision Analytics. Quick reason I called: we help teams turn survey and field data into clearer business decisions. Are you currently doing any market research or data collection?";
+    return "Hi, this is Pooja from DP vision Analytics. We help businesses connect CRM, ERP, automation, and reporting into cleaner workflows. Is that relevant for your team?";
   }
 
   if (/\b(bye|goodbye|end|hang up|stop|not interested)\b/i.test(lower)) {
@@ -557,7 +557,19 @@ function getLocalAgentReply(customerText) {
   }
 
   if (/\b(who|what.*company|about|do you do|dpvision|dp vision|service|services)\b/i.test(lower)) {
-    return "DP vision Analytics handles market research, field surveys, data collection, validation, and business intelligence reporting. Would a quick 10-minute demo help you see if it fits your use case?";
+    return "DP vision Analytics builds custom CRM, ERP, AI automation, dashboards, and cloud business systems. Would a quick 10-minute demo help you see the fit?";
+  }
+
+  if (/\b(crm|erp|inventory|sales|operations|finance|account|accounts)\b/i.test(lower)) {
+    return "That makes sense. A custom CRM or ERP can bring those workflows into one place instead of scattered tools. Which part feels most messy right now?";
+  }
+
+  if (/\b(automation|manual|follow.?up|whatsapp|telephony|calls|missed call|workflow)\b/i.test(lower)) {
+    return "Got it. DP vision Analytics can automate follow-ups, call handling, WhatsApp flows, and routine tasks. Where are you losing the most time today?";
+  }
+
+  if (/\b(dashboard|report|reporting|kpi|analytics|data|decision|visibility)\b/i.test(lower)) {
+    return "Understood. Their dashboards and analytics work is mainly about real-time visibility and faster decisions. What reports are delayed for you now?";
   }
 
   if (/\b(price|pricing|cost|charge|package|plan)\b/i.test(lower)) {
@@ -576,7 +588,7 @@ function getLocalAgentReply(customerText) {
     return "Sure, I can keep it brief. What time would be better for a quick callback?";
   }
 
-  return "Got it. DP vision Analytics can help with survey planning, field execution, data quality checks, and insight reporting. What kind of data or research work are you handling right now?";
+  return "Got it. The main thing DP vision Analytics solves is scattered business systems and slow visibility. Are you looking more at CRM, ERP, automation, or dashboards?";
 }
 
 async function getGeminiReply(callSid, customerText) {
