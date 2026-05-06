@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: dpvision-pooja-ai
+    env: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: DPVISION_AGENT_PROMPT_FILE
+        value: agent-prompt.txt
+      - key: TWILIO_VOICE
+        value: Polly.Aditi
+      - key: DIALER_MODE
+        value: twilio
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: VITE_CLIENT_ID
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: SIP_TRUNK_DOMAIN
+        sync: false
+      - key: SIP_AUTH_USERNAME
+        sync: false
+      - key: SIP_AUTH_PASSWORD
+        sync: false

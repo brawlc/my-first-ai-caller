@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:fillViewport="true">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:text="DPvision Android Gateway"
+      android:textSize="22sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:text="Backend base URL (use your PC local IP, not localhost)" />
+
+    <EditText
+      android:id="@+id/backendUrlInput"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:hint="http://192.168.1.20:3001" />
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="10dp"
+      android:text="Google Calendar access token (optional)" />
+
+    <EditText
+      android:id="@+id/calendarTokenInput"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:hint="ya29...."
+      android:inputType="textPassword" />
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="14dp"
+      android:orientation="horizontal">
+
+      <Button
+        android:id="@+id/saveConfigButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="Save" />
+
+      <Button
+        android:id="@+id/startBridgeButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:text="Start Bridge" />
+    </LinearLayout>
+
+    <Button
+      android:id="@+id/stopBridgeButton"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:text="Stop Bridge" />
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="18dp"
+      android:text="Manual test turn" />
+
+    <EditText
+      android:id="@+id/userTurnInput"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:hint="Type what caller said..." />
+
+    <Button
+      android:id="@+id/sendTurnButton"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:text="Send Turn To Backend" />
+
+    <TextView
+      android:id="@+id/statusText"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="14dp"
+      android:text="Status: idle"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/replyText"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:text="Agent reply will show here."
+      android:textIsSelectable="true" />
+  </LinearLayout>
+</ScrollView>

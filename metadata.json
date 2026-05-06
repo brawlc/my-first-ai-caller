@@ -1,0 +1,6 @@
+{
+  "name": "DPvision Analytics - Pooja AI",
+  "description": "Professional AI calling agent for DPvision Analytics, specializing in Market Research and high-fidelity lead engagement.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["AI calling", "Sentiment analysis", "Lead management"]
+}
