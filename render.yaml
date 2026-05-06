@@ -18,6 +18,12 @@ services:
         value: agent-prompt.txt
       - key: TWILIO_VOICE
         value: Polly.Aditi
+      - key: TWILIO_GATHER_LANGUAGE
+        value: en-IN
+      - key: TWILIO_GATHER_TIMEOUT
+        value: 15
+      - key: TWILIO_GATHER_SPEECH_TIMEOUT
+        value: auto
       - key: DIALER_MODE
         value: twilio
       - key: MONGODB_DB_NAME
