@@ -21,13 +21,13 @@
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:layout_marginTop="12dp"
-      android:text="Backend base URL (use your PC local IP, not localhost)" />
+      android:text="Backend base URL" />
 
     <EditText
       android:id="@+id/backendUrlInput"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:hint="http://192.168.1.20:3001" />
+      android:hint="https://dpvision-pooja-ai.onrender.com" />
 
     <TextView
       android:layout_width="match_parent"

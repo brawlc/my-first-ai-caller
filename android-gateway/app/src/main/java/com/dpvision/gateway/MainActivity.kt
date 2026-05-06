@@ -19,6 +19,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
+  private val defaultBackendUrl = "https://dpvision-pooja-ai.onrender.com"
   private lateinit var backendUrlInput: EditText
   private lateinit var calendarTokenInput: EditText
   private lateinit var userTurnInput: EditText
@@ -52,7 +53,7 @@ class MainActivity : ComponentActivity() {
     val stopBridgeButton: Button = findViewById(R.id.stopBridgeButton)
     val sendTurnButton: Button = findViewById(R.id.sendTurnButton)
 
-    backendUrlInput.setText(Prefs.getBaseUrl(this))
+    backendUrlInput.setText(Prefs.getBaseUrl(this).ifBlank { defaultBackendUrl })
     calendarTokenInput.setText(Prefs.getCalendarToken(this))
     statusText.text = "Status: ready"
 

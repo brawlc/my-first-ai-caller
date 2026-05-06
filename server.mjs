@@ -361,8 +361,7 @@ function twiml(body) {
   return `<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`;
 }
 
-function say(text) {
-  const settings = getVoiceSettings();
+function buildSay(text, settings = getVoiceSettings()) {
   const spokenText = String(text)
     .replace(/\bD\s*P\s*vision\b/gi, "D P vision")
     .replace(/\bDP\s*vision\b/gi, "D P vision")
@@ -373,6 +372,10 @@ function say(text) {
     .replace(/\s+/g, " ")
     .trim();
   return `<Say voice="${escapeXml(settings.voice)}" language="${escapeXml(settings.language)}">${escapeXml(spokenText)}</Say>`;
+}
+
+function say(text) {
+  return buildSay(text);
 }
 
 function gather(prompt) {
@@ -592,16 +595,36 @@ async function ensureModelCandidates() {
   return discoveredModelCandidates;
 }
 
-function getLocalAgentReply(customerText) {
+function wasAsked(history, pattern) {
+  return normalizeHistory(history).some((entry) => entry.role === "model" && pattern.test(entry.text));
+}
+
+function getLocalAgentReply(customerText, history = []) {
   const text = String(customerText || "").trim();
   const lower = text.toLowerCase();
+  const askedReason = wasAsked(history, /manual follow-ups|scattered tools|late reports|closest for you/i);
+  const askedArea = wasAsked(history, /sales|operations|inventory|accounts|reporting/i);
+  const askedTools = wasAsked(history, /what tools|excel|whatsapp|crm|erp/i);
+  const askedPain = wasAsked(history, /biggest issue|missed follow-ups|duplicate entry|delayed reports|poor visibility/i);
 
   if (!text || /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text)) {
-    return "Hi, this is Pooja from DP vision Analytics. We help businesses connect CRM, ERP, automation, and reporting into cleaner workflows. Is that relevant for your team?";
+    return "Hi, this is Pooja from DP vision Analytics. We help businesses reduce manual follow-ups, scattered tools, and late reports. Is that relevant?";
   }
 
-  if (/^(yes|yeah|yep|sure|okay|ok|go ahead|tell me|haan|ha)$/i.test(lower)) {
-    return "Great. Quick question: are your sales, operations, reports, or follow-ups currently managed across separate tools?";
+  if (/^(yes|yeah|yep|sure|okay|ok|go ahead|tell me|haan|ha)[\s.!?,]*$/i.test(lower)) {
+    if (!askedReason) {
+      return "Great. Is your bigger problem manual follow-ups, scattered tools, delayed reports, or something else?";
+    }
+    if (!askedArea) {
+      return "Got it. Which team or process should we look at first: sales, operations, inventory, accounts, or reporting?";
+    }
+    if (!askedTools) {
+      return "Understood. What are you using today for that: Excel, WhatsApp, CRM, ERP, or another tool?";
+    }
+    if (!askedPain) {
+      return "Makes sense. What is causing the most trouble there: duplicate entry, missed follow-ups, delayed reports, or poor visibility?";
+    }
+    return "That helps. Would you like a 10-minute demo where a specialist maps this workflow and suggests the right setup?";
   }
 
   if (/\b(bye|goodbye|end|hang up|stop|not interested)\b/i.test(lower)) {
@@ -640,7 +663,43 @@ function getLocalAgentReply(customerText) {
     return "Sure, I can keep it brief. What time would be better for a quick callback?";
   }
 
-  return "Got it. The main thing DP vision Analytics solves is scattered business systems and slow visibility. Are you looking more at CRM, ERP, automation, or dashboards?";
+  return "Got it. Tell me one detail: which workflow is most messy today: sales, operations, inventory, accounts, reporting, or follow-ups?";
+}
+
+function buildRuntimeCallRules(history) {
+  const assistantTurns = normalizeHistory(history)
+    .filter((entry) => entry.role === "model")
+    .map((entry) => entry.text)
+    .slice(-5);
+
+  const previousReplies = assistantTurns.length
+    ? `\nRecent Pooja replies, do not reuse these words or structure:\n${assistantTurns.map((turn) => `- ${turn}`).join("\n")}`
+    : "";
+
+  return `${previousReplies}
+
+Live-call control rules:
+- If the caller only says yes, okay, sure, or go ahead, do not repeat the opener or another permission question.
+- After permission, state the reason for the call in one short sentence, then ask for one concrete detail.
+- Rotate discovery questions across current tools, workflow area, team size, biggest delay, missed follow-ups, reporting gaps, and demo timing.
+- If the caller gives a vague answer, ask a specific either-or question instead of pitching again.
+- Never say the same company/service list twice in the same call.`.trim();
+}
+
+function isWeakDiscoveryReply(customerText, replyText, history) {
+  const customer = String(customerText || "").trim().toLowerCase();
+  const reply = String(replyText || "").trim();
+  const lowerReply = reply.toLowerCase();
+  const onlyPermission = /^(yes|yeah|yep|sure|okay|ok|go ahead|tell me|haan|ha)\.?$/i.test(customer);
+  if (!onlyPermission) return false;
+  if (reply.length < 18) return true;
+  if (!reply.includes("?") && !/\b(demo|callback|email|date|time)\b/i.test(reply)) return true;
+  if (/\bis this (a )?(good|okay) time|quick call|quick chat\b/i.test(reply)) return true;
+
+  const recentAgentText = normalizeHistory(history)
+    .filter((entry) => entry.role === "model")
+    .map((entry) => entry.text.toLowerCase());
+  return recentAgentText.some((previous) => previous && lowerReply === previous);
 }
 
 async function getGeminiReply(callSid, customerText) {
@@ -657,7 +716,7 @@ async function getGeminiReply(callSid, customerText) {
     if (userText) {
       callHistories.set(callSid, history.concat([{ role: "user", text: userText }]).slice(-MAX_HISTORY_TURNS));
     }
-    return getLocalAgentReply(userText);
+    return getLocalAgentReply(userText, history);
   }
 
   const conversation = [...history];
@@ -683,7 +742,7 @@ async function getGeminiReply(callSid, customerText) {
       const response = await ai.models.generateContent({
         model,
         config: systemPrompt || languageInstruction
-          ? { ...generationDefaults, systemInstruction: `${systemPrompt || ""}${languageInstruction}`.trim() }
+          ? { ...generationDefaults, systemInstruction: `${systemPrompt || ""}${languageInstruction}\n\n${buildRuntimeCallRules(conversation)}`.trim() }
           : generationDefaults,
         contents: conversation.map((entry) => ({
           role: entry.role,
@@ -694,6 +753,16 @@ async function getGeminiReply(callSid, customerText) {
       const text = response.text?.trim();
       if (text) {
         const normalizedText = normalizeCompanyName(text);
+        if (isWeakDiscoveryReply(userText, normalizedText, conversation)) {
+          const fallbackText = normalizeCompanyName(getLocalAgentReply(userText, conversation));
+          callHistories.set(
+            callSid,
+            conversation
+              .concat([{ role: "model", text: fallbackText }])
+              .slice(-MAX_HISTORY_TURNS)
+          );
+          return fallbackText;
+        }
         activeModel = model;
         lastGeminiError = "";
         quotaBlockedModels.delete(model);
@@ -719,7 +788,7 @@ async function getGeminiReply(callSid, customerText) {
 
   lastGeminiError = errors.length > 0 ? errors.join(" | ") : "No supported Gemini model returned text.";
   callHistories.set(callSid, conversation.slice(-MAX_HISTORY_TURNS));
-  return normalizeCompanyName(getLocalAgentReply(userText));
+  return normalizeCompanyName(getLocalAgentReply(userText, conversation));
 }
 
 function getLocalSentiment(text) {
@@ -1494,6 +1563,51 @@ async function startServer() {
   app.put("/api/voice-settings", (req, res) => {
     voiceSettings = normalizeVoiceSettings(req.body || {});
     res.json({ ok: true, ...getVoiceSettings() });
+  });
+
+  app.post("/api/voice-settings/test-call", async (req, res) => {
+    const normalizedNumber = normalizeDialNumber(req.body?.number || "");
+    if (!isValidDialNumber(normalizedNumber)) {
+      res.status(400).json({
+        ok: false,
+        error: "Enter a valid phone number with country code, for example +919876543210.",
+      });
+      return;
+    }
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_NUMBER) {
+      res.status(400).json({ ok: false, error: "Twilio credentials are not configured." });
+      return;
+    }
+
+    const testSettings = normalizeVoiceSettings(req.body?.settings || getVoiceSettings());
+    const sampleText = String(
+      req.body?.sampleText || "Hi, this is Pooja from DP vision Analytics. This is a real phone test for this voice pack."
+    ).trim();
+    const params = new URLSearchParams({
+      To: normalizedNumber,
+      From: TWILIO_FROM_NUMBER,
+      Twiml: twiml(`${buildSay(sampleText, testSettings)}<Hangup />`),
+    });
+
+    try {
+      const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        res.status(response.status).json({ ok: false, error: payload?.message || "Twilio test call failed.", details: payload });
+        return;
+      }
+      res.json({ ok: true, callSid: payload.sid, status: payload.status, to: normalizedNumber });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: readErrorMessage(error) });
+    }
   });
 
   app.put("/api/agent-prompt", express.text({ type: "*/*" }), (req, res) => {

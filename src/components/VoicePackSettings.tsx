@@ -58,6 +58,22 @@ const BOT_LANGUAGES: BotLanguage[] = [
 
 const ACCENT_PACKS: AccentPack[] = [
   {
+    id: 'basic-woman',
+    label: 'Basic Woman',
+    language: 'en-US',
+    voice: 'woman',
+    promptStyle: 'a basic female phone voice',
+    description: 'Twilio basic voice; useful as a clearly different fallback.',
+  },
+  {
+    id: 'basic-man',
+    label: 'Basic Man',
+    language: 'en-US',
+    voice: 'man',
+    promptStyle: 'a basic male phone voice',
+    description: 'Twilio basic voice; the clearest contrast test.',
+  },
+  {
     id: 'indian-female',
     label: 'Indian Female',
     language: 'en-IN',
@@ -123,12 +139,45 @@ const ACCENT_PACKS: AccentPack[] = [
   },
 ];
 
+const getVoiceSampleText = (languageId: string, accentId: string, mode: 'browser' | 'phone') => {
+  const phonePrefix = mode === 'phone' ? 'This is the real phone preview. ' : '';
+
+  if (languageId === 'hinglish' || languageId === 'hindi') {
+    return `${phonePrefix}Namaste, main Pooja DP vision Analytics se bol rahi hoon. Sales follow-ups ya reports me sabse zyada delay kahan aa raha hai?`;
+  }
+
+  if (languageId === 'punjabi') {
+    return `${phonePrefix}Sat sri akal, main Pooja DP vision Analytics ton bol rahi haan. Tuhade team vich sab ton vadda workflow issue keda hai?`;
+  }
+
+  if (languageId === 'regional') {
+    return `${phonePrefix}Hi, this is Pooja from DP vision Analytics. I can switch language if needed. Which workflow needs attention first?`;
+  }
+
+  const accentSamples: Record<string, string> = {
+    'basic-woman': 'Hi, this is Pooja from DP vision Analytics. Quick check: are follow-ups, reports, or scattered tools slowing your team?',
+    'basic-man': 'Hello, this is Pooja from DP vision Analytics. I am checking whether your CRM, ERP, or reporting workflow needs cleanup.',
+    'indian-female': 'Good morning, this is Pooja from DP vision Analytics. Which process is messy today: sales, operations, accounts, or reports?',
+    'indian-neutral': 'Hi, Pooja here from DP vision Analytics. What are you using now for tracking leads, Excel, WhatsApp, CRM, or something else?',
+    'us-female': 'Hi, this is Pooja from DP vision Analytics. Where do reports or customer follow-ups usually get delayed in your team?',
+    'us-male': 'Hello, this is Pooja from DP vision Analytics. I am asking one thing: which business system needs better visibility?',
+    'british-female': 'Good day, this is Pooja from DP vision Analytics. Is the main gap reporting, automation, CRM, or ERP?',
+    'british-male': 'Hello, Pooja from DP vision Analytics. What would help most: fewer manual entries, cleaner dashboards, or better follow-ups?',
+    'australian-female': 'Hi, this is Pooja from DP vision Analytics. Which team should we understand first, sales, operations, finance, or support?',
+    'fallback-alice': 'Hi, this is Pooja from DP vision Analytics. This fallback voice asks about tools, reports, and missed follow-ups.',
+  };
+
+  return `${phonePrefix}${accentSamples[accentId] || accentSamples['indian-female']}`;
+};
+
 export const VoicePackSettings = () => {
   const [selectedLanguageId, setSelectedLanguageId] = useState(BOT_LANGUAGES[0].id);
   const [selectedAccentId, setSelectedAccentId] = useState(ACCENT_PACKS[0].id);
   const [status, setStatus] = useState<{ tone: 'neutral' | 'success' | 'error'; text: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [testPhoneNumber, setTestPhoneNumber] = useState('');
+  const [isPhoneTesting, setIsPhoneTesting] = useState(false);
 
   const selectedLanguage = useMemo(
     () => BOT_LANGUAGES.find((language) => language.id === selectedLanguageId) || BOT_LANGUAGES[0],
@@ -161,12 +210,7 @@ export const VoicePackSettings = () => {
   }, []);
 
   const saveVoicePack = async () => {
-    const payload = {
-      label: `${selectedLanguage.label} + ${selectedAccent.label}`,
-      language: selectedAccent.language,
-      voice: selectedAccent.voice,
-      promptLanguage: `${selectedLanguage.promptLanguage}, spoken with ${selectedAccent.promptStyle}`,
-    };
+    const payload = buildSelectedPayload();
 
     try {
       setIsSaving(true);
@@ -187,6 +231,13 @@ export const VoicePackSettings = () => {
     }
   };
 
+  const buildSelectedPayload = () => ({
+      label: `${selectedLanguage.label} + ${selectedAccent.label}`,
+      language: selectedAccent.language,
+      voice: selectedAccent.voice,
+      promptLanguage: `${selectedLanguage.promptLanguage}, spoken with ${selectedAccent.promptStyle}`,
+  });
+
   const waitForBrowserVoices = async () => {
     if (!window.speechSynthesis) return [] as SpeechSynthesisVoice[];
     const voices = window.speechSynthesis.getVoices();
@@ -206,12 +257,7 @@ export const VoicePackSettings = () => {
   };
 
   const testVoicePack = async () => {
-    const sampleText =
-      selectedLanguage.id === 'hinglish' || selectedLanguage.id === 'hindi'
-        ? 'Namaste, main Pooja bol rahi hoon DP vision Analytics se. Kya aapke paas ek minute hai?'
-        : selectedLanguage.id === 'punjabi'
-          ? 'Sat sri akal, main Pooja bol rahi haan DP vision Analytics ton. Ki tuhade kol ik minute hai?'
-          : 'Hi, this is Pooja from DP vision Analytics. I am testing this voice pack for new calls.';
+    const sampleText = getVoiceSampleText(selectedLanguage.id, selectedAccent.id, 'browser');
 
     try {
       if (!window.speechSynthesis) {
@@ -254,6 +300,38 @@ export const VoicePackSettings = () => {
       setIsTesting(false);
       const message = error instanceof Error ? error.message : 'Could not play the voice preview.';
       setStatus({ tone: 'error', text: message });
+    }
+  };
+
+  const testVoiceOnPhone = async () => {
+    const number = testPhoneNumber.trim();
+    if (!number) {
+      setStatus({ tone: 'error', text: 'Enter a phone number with country code first, like +919877287234.' });
+      return;
+    }
+
+    const sampleText = getVoiceSampleText(selectedLanguage.id, selectedAccent.id, 'phone');
+
+    try {
+      setIsPhoneTesting(true);
+      setStatus({ tone: 'neutral', text: 'Starting real Twilio test call...' });
+      const response = await fetch('/api/voice-settings/test-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          number,
+          settings: buildSelectedPayload(),
+          sampleText,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Could not start real phone test.');
+      setStatus({ tone: 'success', text: `Test call started to ${payload.to}. Pick up to hear the real Twilio voice.` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not start real phone test.';
+      setStatus({ tone: 'error', text: message });
+    } finally {
+      setIsPhoneTesting(false);
     }
   };
 
@@ -371,6 +449,31 @@ export const VoicePackSettings = () => {
           >
             <Save size={15} />
             {isSaving ? 'Saving' : 'Use This Setup'}
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
+        <div className="mb-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-300">Real Phone Test</p>
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Browser preview depends on installed browser voices. This calls your phone and uses the real Twilio voice.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 md:flex-row">
+          <input
+            value={testPhoneNumber}
+            onChange={(event) => setTestPhoneNumber(event.target.value)}
+            placeholder="+91XXXXXXXXXX"
+            className="flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+          />
+          <button
+            onClick={() => void testVoiceOnPhone()}
+            disabled={isPhoneTesting}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-xs font-bold uppercase text-white hover:bg-green-500 disabled:opacity-50"
+          >
+            <Play size={15} />
+            {isPhoneTesting ? 'Calling' : 'Test On Phone'}
           </button>
         </div>
       </section>
