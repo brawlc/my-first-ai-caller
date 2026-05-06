@@ -618,8 +618,8 @@ function isClearRejection(text) {
   if (!lower) return false;
   if (isMixedIntent(lower)) return false;
   return (
-    /^(no|nope|nah|no sorry|sorry no|not interested|stop|end|bye|goodbye|hang up)[\s.!?,]*$/i.test(lower) ||
-    /\b(not interested|stop calling|don't call|do not call|hang up|end the call|bye|goodbye)\b/i.test(lower)
+    /^(no|nope|nah|no sorry|sorry no|not intere?sted|not intrested|sorry not intere?sted|sorry not intrested|stop|end|bye|goodbye|hang up)[\s.!?,]*$/i.test(lower) ||
+    /\b(not intere?sted|not intrested|stop calling|don't call|do not call|hang up|end the call|bye|goodbye)\b/i.test(lower)
   );
 }
 
@@ -749,6 +749,17 @@ async function getGeminiReply(callSid, customerText) {
 
   if (conversation.length === 0) {
     conversation.push({ role: "user", text: "Hello" });
+  }
+
+  if (isClearRejection(userText)) {
+    const closingReply = normalizeCompanyName(getLocalAgentReply(userText, conversation));
+    callHistories.set(
+      callSid,
+      conversation
+        .concat([{ role: "model", text: closingReply }])
+        .slice(-MAX_HISTORY_TURNS)
+    );
+    return closingReply;
   }
 
   const candidates = await ensureModelCandidates();
