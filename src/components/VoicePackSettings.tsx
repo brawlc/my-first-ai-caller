@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Languages, Mic2, Save } from 'lucide-react';
+import { Languages, Mic2, Play, Save } from 'lucide-react';
 
 type BotLanguage = {
   id: string;
@@ -128,6 +128,7 @@ export const VoicePackSettings = () => {
   const [selectedAccentId, setSelectedAccentId] = useState(ACCENT_PACKS[0].id);
   const [status, setStatus] = useState<{ tone: 'neutral' | 'success' | 'error'; text: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
 
   const selectedLanguage = useMemo(
     () => BOT_LANGUAGES.find((language) => language.id === selectedLanguageId) || BOT_LANGUAGES[0],
@@ -183,6 +184,45 @@ export const VoicePackSettings = () => {
       setStatus({ tone: 'error', text: message });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const testVoicePack = () => {
+    const sampleText =
+      selectedLanguage.id === 'hinglish' || selectedLanguage.id === 'hindi'
+        ? 'Namaste, main Pooja bol rahi hoon DP vision Analytics se. Kya aapke paas ek minute hai?'
+        : selectedLanguage.id === 'punjabi'
+          ? 'Sat sri akal, main Pooja bol rahi haan DP vision Analytics ton. Ki tuhade kol ik minute hai?'
+          : 'Hi, this is Pooja from DP vision Analytics. I am testing this voice pack for new calls.';
+
+    try {
+      if (!window.speechSynthesis) {
+        setStatus({ tone: 'error', text: 'Voice preview is not supported in this browser.' });
+        return;
+      }
+      setIsTesting(true);
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(sampleText);
+      utterance.lang = selectedAccent.language;
+      utterance.rate = 1.02;
+      utterance.pitch = selectedAccent.id.includes('male') ? 0.9 : 1.02;
+      const voices = window.speechSynthesis.getVoices();
+      const matchingVoice =
+        voices.find((voice) => voice.lang === selectedAccent.language && voice.name.toLowerCase().includes(selectedAccent.label.split(' ')[0].toLowerCase())) ||
+        voices.find((voice) => voice.lang === selectedAccent.language) ||
+        voices.find((voice) => voice.lang.toLowerCase().startsWith(selectedAccent.language.split('-')[0].toLowerCase()));
+      if (matchingVoice) utterance.voice = matchingVoice;
+      utterance.onend = () => setIsTesting(false);
+      utterance.onerror = () => {
+        setIsTesting(false);
+        setStatus({ tone: 'error', text: 'Could not play the voice preview.' });
+      };
+      window.speechSynthesis.speak(utterance);
+      setStatus({ tone: 'neutral', text: 'Playing browser preview. Real phone calls use Twilio voice settings.' });
+    } catch (error) {
+      setIsTesting(false);
+      const message = error instanceof Error ? error.message : 'Could not play the voice preview.';
+      setStatus({ tone: 'error', text: message });
     }
   };
 
@@ -284,14 +324,24 @@ export const VoicePackSettings = () => {
             Pooja replies in {selectedLanguage.label}; Twilio speaks with {selectedAccent.label}.
           </p>
         </div>
-        <button
-          onClick={() => void saveVoicePack()}
-          disabled={isSaving}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-3 text-xs font-bold uppercase text-white hover:bg-cyan-500 disabled:opacity-50"
-        >
-          <Save size={15} />
-          {isSaving ? 'Saving' : 'Use This Setup'}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={testVoicePack}
+            disabled={isTesting}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-xs font-bold uppercase text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+          >
+            <Play size={15} />
+            {isTesting ? 'Playing' : 'Test Voice'}
+          </button>
+          <button
+            onClick={() => void saveVoicePack()}
+            disabled={isSaving}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-3 text-xs font-bold uppercase text-white hover:bg-cyan-500 disabled:opacity-50"
+          >
+            <Save size={15} />
+            {isSaving ? 'Saving' : 'Use This Setup'}
+          </button>
+        </div>
       </section>
     </div>
   );
