@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Download, Search, MoreVertical, Plus, CalendarPlus, X, Pencil, Trash2 } from 'lucide-react';
+import { Upload, Download, Search, MoreVertical, Plus, CalendarPlus, X, Pencil, Trash2, PhoneCall } from 'lucide-react';
 import { Lead } from '../types';
 import { createCalendarEvent, getAccessToken, isCalendarConfigured } from '../services/googleWorkspaceService';
 
@@ -67,6 +67,8 @@ export const LeadManager = () => {
   const [isBooking, setIsBooking] = useState(false);
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
   const [dataStatus, setDataStatus] = useState<CalendarStatus | null>({ tone: 'neutral', text: 'Loading leads...' });
+  const [callStatus, setCallStatus] = useState<CalendarStatus | null>(null);
+  const [callingLeadId, setCallingLeadId] = useState<string | null>(null);
   const [openActionLeadId, setOpenActionLeadId] = useState<string | null>(null);
   const [editingLead, setEditingLead] = useState<LeadForm | null>(null);
 
@@ -284,6 +286,36 @@ export const LeadManager = () => {
     setCalendarStatus(null);
   };
 
+  const callLead = async (lead: Lead) => {
+    const phone = lead.phone.trim();
+    if (!phone) {
+      setCallStatus({ tone: 'error', text: `No phone number saved for ${lead.name}.` });
+      return;
+    }
+
+    try {
+      setCallingLeadId(lead.id);
+      setCallStatus({ tone: 'neutral', text: `Starting call to ${lead.name}...` });
+      const response = await fetch('/api/dialer/call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number: phone }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not start call.');
+      }
+
+      setCallStatus({ tone: 'success', text: `Calling ${lead.name} at ${payload.to}.` });
+      void updateLeadStatus(lead.id, 'called');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not start call.';
+      setCallStatus({ tone: 'error', text: message });
+    } finally {
+      setCallingLeadId(null);
+    }
+  };
+
   const closeBookingModal = () => {
     setSelectedLead(null);
     setIsBooking(false);
@@ -386,6 +418,20 @@ export const LeadManager = () => {
         </div>
       )}
 
+      {callStatus && (
+        <div
+          className={`px-4 py-3 rounded-xl border text-xs ${
+            callStatus.tone === 'success'
+              ? 'bg-green-600/10 border-green-500/30 text-green-200'
+              : callStatus.tone === 'error'
+                ? 'bg-red-600/10 border-red-500/30 text-red-200'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-200'
+          }`}
+        >
+          {callStatus.text}
+        </div>
+      )}
+
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 bento-card p-0 overflow-hidden">
           <div className="p-4 border-b border-zinc-800 bg-zinc-900/50 flex items-center gap-4">
@@ -449,6 +495,14 @@ export const LeadManager = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => void callLead(lead)}
+                          disabled={callingLeadId === lead.id}
+                          className="px-3 py-2 rounded-lg bg-cyan-600/20 border border-cyan-500/40 text-[10px] font-bold uppercase text-cyan-200 hover:bg-cyan-600/30 disabled:opacity-50"
+                        >
+                          <PhoneCall size={12} className="inline mr-1" />
+                          {callingLeadId === lead.id ? 'Calling' : 'Call'}
+                        </button>
                         <button
                           onClick={() => openBookingModal(lead)}
                           className="px-3 py-2 rounded-lg bg-indigo-600/20 border border-indigo-500/40 text-[10px] font-bold uppercase text-indigo-200 hover:bg-indigo-600/30"
