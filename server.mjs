@@ -599,32 +599,25 @@ function wasAsked(history, pattern) {
   return normalizeHistory(history).some((entry) => entry.role === "model" && pattern.test(entry.text));
 }
 
+function countAgentQuestions(history) {
+  return normalizeHistory(history).filter((entry) => entry.role === "model" && entry.text.includes("?")).length;
+}
+
 function getLocalAgentReply(customerText, history = []) {
   const text = String(customerText || "").trim();
   const lower = text.toLowerCase();
-  const askedReason = wasAsked(history, /manual follow-ups|scattered tools|late reports|closest for you/i);
-  const askedArea = wasAsked(history, /sales|operations|inventory|accounts|reporting/i);
-  const askedTools = wasAsked(history, /what tools|excel|whatsapp|crm|erp/i);
-  const askedPain = wasAsked(history, /biggest issue|missed follow-ups|duplicate entry|delayed reports|poor visibility/i);
+  const agentQuestionCount = countAgentQuestions(history);
+  const offeredDemo = wasAsked(history, /10-minute demo|short demo|demo/i);
 
   if (!text || /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text)) {
-    return "Hi, this is Pooja from DP vision Analytics. We help businesses reduce manual follow-ups, scattered tools, and late reports. Is that relevant?";
+    return "Hi, this is Pooja from DP vision Analytics. We build custom CRM, ERP, automation, and dashboard systems for growing teams. Is this relevant for your business?";
   }
 
   if (/^(yes|yeah|yep|sure|okay|ok|go ahead|tell me|haan|ha)[\s.!?,]*$/i.test(lower)) {
-    if (!askedReason) {
-      return "Great. Is your bigger problem manual follow-ups, scattered tools, delayed reports, or something else?";
+    if (offeredDemo || agentQuestionCount >= 2) {
+      return "Perfect. Share a preferred time and email, and I can arrange a short demo with the DP vision team.";
     }
-    if (!askedArea) {
-      return "Got it. Which team or process should we look at first: sales, operations, inventory, accounts, or reporting?";
-    }
-    if (!askedTools) {
-      return "Understood. What are you using today for that: Excel, WhatsApp, CRM, ERP, or another tool?";
-    }
-    if (!askedPain) {
-      return "Makes sense. What is causing the most trouble there: duplicate entry, missed follow-ups, delayed reports, or poor visibility?";
-    }
-    return "That helps. Would you like a 10-minute demo where a specialist maps this workflow and suggests the right setup?";
+    return "Great. We usually help when teams are outgrowing Excel, WhatsApp, or disconnected software. Would a 10-minute demo be useful?";
   }
 
   if (/\b(bye|goodbye|end|hang up|stop|not interested)\b/i.test(lower)) {
@@ -632,19 +625,19 @@ function getLocalAgentReply(customerText, history = []) {
   }
 
   if (/\b(who|what.*company|about|do you do|dpvision|dp vision|service|services)\b/i.test(lower)) {
-    return "DP vision Analytics builds custom CRM, ERP, AI automation, dashboards, and cloud business systems. Would a quick 10-minute demo help you see the fit?";
+    return "DP vision Analytics builds custom CRM, ERP, automation, and dashboard systems so business work is easier to track. I can arrange a quick demo if useful.";
   }
 
   if (/\b(crm|erp|inventory|sales|operations|finance|account|accounts)\b/i.test(lower)) {
-    return "That makes sense. A custom CRM or ERP can bring those workflows into one place instead of scattered tools. Which part feels most messy right now?";
+    return "That makes sense. A custom CRM or ERP can bring that into one place instead of scattered tracking. Would you like a quick demo?";
   }
 
   if (/\b(automation|manual|follow.?up|whatsapp|telephony|calls|missed call|workflow)\b/i.test(lower)) {
-    return "Got it. DP vision Analytics can automate follow-ups, call handling, WhatsApp flows, and routine tasks. Where are you losing the most time today?";
+    return "Got it. DP vision Analytics can automate follow-ups, WhatsApp flows, calls, and routine tasks. A short demo would show this clearly.";
   }
 
   if (/\b(dashboard|report|reporting|kpi|analytics|data|decision|visibility)\b/i.test(lower)) {
-    return "Understood. Their dashboards and analytics work is mainly about real-time visibility and faster decisions. What reports are delayed for you now?";
+    return "Understood. Their dashboards help teams see KPIs and reports faster without manual chasing. I can set up a quick walkthrough.";
   }
 
   if (/\b(price|pricing|cost|charge|package|plan)\b/i.test(lower)) {
@@ -663,7 +656,11 @@ function getLocalAgentReply(customerText, history = []) {
     return "Sure, I can keep it brief. What time would be better for a quick callback?";
   }
 
-  return "Got it. Tell me one detail: which workflow is most messy today: sales, operations, inventory, accounts, reporting, or follow-ups?";
+  if (agentQuestionCount >= 2) {
+    return "Fair enough. DP vision Analytics can show the right fit better in a short demo than over a long call.";
+  }
+
+  return "Got it. Many teams call us when Excel, WhatsApp, or separate tools become hard to manage. Is that close to your situation?";
 }
 
 function buildRuntimeCallRules(history) {
@@ -680,9 +677,10 @@ function buildRuntimeCallRules(history) {
 
 Live-call control rules:
 - If the caller only says yes, okay, sure, or go ahead, do not repeat the opener or another permission question.
-- After permission, state the reason for the call in one short sentence, then ask for one concrete detail.
-- Rotate discovery questions across current tools, workflow area, team size, biggest delay, missed follow-ups, reporting gaps, and demo timing.
-- If the caller gives a vague answer, ask a specific either-or question instead of pitching again.
+- Be a sales agent, not an interviewer: lead with a useful benefit, ask at most one light qualifying question, then offer a short demo or callback.
+- Do not ask long menu questions with many options.
+- If the caller gives a vague answer, briefly explain the value and move toward a demo instead of asking another discovery question.
+- After two Pooja questions in the call, stop qualifying and ask for demo timing, email, or callback timing.
 - Never say the same company/service list twice in the same call.`.trim();
 }
 
