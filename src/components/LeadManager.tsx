@@ -70,7 +70,8 @@ function parseLeadStatus(value: unknown): LeadStatus {
 }
 
 export const LeadManager = () => {
-  const [leads, setLeads] = useState<Lead[]>(DEFAULT_LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(true);
 
   const [searchText, setSearchText] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -116,12 +117,15 @@ export const LeadManager = () => {
           throw new Error(payload.error || 'Could not load MongoDB leads.');
         }
         if (!isMounted) return;
-        setLeads(Array.isArray(payload.leads) && payload.leads.length ? payload.leads : DEFAULT_LEADS);
+        setLeads(Array.isArray(payload.leads) ? payload.leads : []);
         setDataStatus({ tone: 'success', text: 'MongoDB connected. Leads are syncing.' });
       } catch (error) {
         if (!isMounted) return;
         const message = error instanceof Error ? error.message : 'Could not load MongoDB leads.';
+        setLeads(DEFAULT_LEADS);
         setDataStatus({ tone: 'error', text: `${message} Using sample leads until MongoDB is configured.` });
+      } finally {
+        if (isMounted) setIsLoadingLeads(false);
       }
     };
 
@@ -369,6 +373,24 @@ export const LeadManager = () => {
     }
   };
 
+  const stopLeadCall = async () => {
+    if (!activeLeadCallSid) return;
+    const callSid = activeLeadCallSid;
+    try {
+      setCallStatus({ tone: 'neutral', text: `Stopping call with ${activeLeadCallName || 'lead'}...` });
+      const response = await fetch(`/api/dialer/calls/${encodeURIComponent(callSid)}/end`, { method: 'POST' });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not stop call.');
+      }
+      setActiveLeadCallStatus('ended');
+      setCallStatus({ tone: 'success', text: `Call with ${activeLeadCallName || 'lead'} ended.` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not stop call.';
+      setCallStatus({ tone: 'error', text: message });
+    }
+  };
+
   const closeBookingModal = () => {
     setSelectedLead(null);
     setIsBooking(false);
@@ -494,17 +516,27 @@ export const LeadManager = () => {
                 {activeLeadCallName || 'Lead'} | {activeLeadCallStatus || 'connecting'} | {activeLeadCallSid}
               </p>
             </div>
-            <button
-              onClick={() => {
-                setActiveLeadCallSid('');
-                setActiveLeadCallName('');
-                setActiveLeadCallStatus('');
-                setActiveLeadCallEvents([]);
-              }}
-              className="self-start rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-[10px] font-bold uppercase text-zinc-300 hover:bg-zinc-800"
-            >
-              Hide
-            </button>
+            <div className="flex gap-2">
+              {activeLeadCallStatus !== 'ended' && (
+                <button
+                  onClick={() => void stopLeadCall()}
+                  className="self-start rounded-lg border border-red-500/40 bg-red-600/15 px-3 py-2 text-[10px] font-bold uppercase text-red-200 hover:bg-red-600/25"
+                >
+                  Stop Call
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setActiveLeadCallSid('');
+                  setActiveLeadCallName('');
+                  setActiveLeadCallStatus('');
+                  setActiveLeadCallEvents([]);
+                }}
+                className="self-start rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-[10px] font-bold uppercase text-zinc-300 hover:bg-zinc-800"
+              >
+                Hide
+              </button>
+            </div>
           </div>
           <div className="mt-4 max-h-72 space-y-3 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 p-4">
             {!activeLeadCallEvents.length ? (
@@ -564,7 +596,21 @@ export const LeadManager = () => {
                 </tr>
               </thead>
               <tbody className="bg-transparent">
-                {filteredLeads.map((lead) => (
+                {isLoadingLeads && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center text-[11px] font-mono uppercase text-zinc-500">
+                      Loading leads from MongoDB...
+                    </td>
+                  </tr>
+                )}
+                {!isLoadingLeads && filteredLeads.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center text-[11px] font-mono uppercase text-zinc-500">
+                      No leads yet. Add one to start calling.
+                    </td>
+                  </tr>
+                )}
+                {!isLoadingLeads && filteredLeads.map((lead) => (
                   <tr key={lead.id} className="border-b border-zinc-800/50 hover:bg-cyan-500/5 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">

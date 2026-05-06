@@ -1325,6 +1325,41 @@ async function startServer() {
     }
   });
 
+  app.post("/api/dialer/calls/:callSid/end", async (req, res) => {
+    const callSid = String(req.params.callSid || "").trim();
+    if (!callSid) {
+      res.status(400).json({ ok: false, error: "callSid is required." });
+      return;
+    }
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+      res.status(400).json({ ok: false, error: "Twilio credentials are not configured." });
+      return;
+    }
+
+    try {
+      const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${callSid}.json`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ Status: "completed" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = payload?.message || `Twilio end call failed with ${response.status}`;
+        res.status(response.status).json({ ok: false, error, details: payload });
+        return;
+      }
+      callHistories.delete(callSid);
+      markLiveCallEnded(callSid);
+      res.json({ ok: true, callSid, status: payload.status || "completed" });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: readErrorMessage(error) });
+    }
+  });
+
   app.get("/api/runtime-config", (_req, res) => {
     res.json({
       clientId: String(process.env.VITE_CLIENT_ID || "").trim(),
