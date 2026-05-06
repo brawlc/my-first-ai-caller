@@ -567,6 +567,31 @@ function normalizeCompanyName(text) {
     .replace(/\bDP vision Analytics\b/gi, "DP vision Analytics");
 }
 
+function hasIntroducedPooja(history) {
+  return normalizeHistory(history).some((entry) =>
+    entry.role === "model" && /\bPooja\b/i.test(entry.text)
+  );
+}
+
+function removeRepeatedIntroduction(text, history) {
+  const rawText = String(text || "").trim();
+  if (!rawText) return rawText;
+  const shouldStrip = hasIntroducedPooja(history) || /\b(this is|it's|i am|i'm)\s+Pooja\b/i.test(rawText);
+  if (!shouldStrip) return rawText;
+
+  let cleaned = rawText
+    .replace(/^\s*(hi|hello|hey|good morning|good afternoon|good evening)[,!.\s-]*/i, "")
+    .replace(/^\s*(this is|it's|i am|i'm)\s+Pooja\s*(from\s+DP vision Analytics)?[,.!:\s-]*/i, "")
+    .replace(/\b(?:this is|it's|i am|i'm)\s+Pooja\s*(?:from\s+DP vision Analytics)?[,.!:\s-]*/gi, "")
+    .trim();
+
+  if (!cleaned || cleaned.length < 8) {
+    return "Sure. DP vision helps businesses replace scattered tracking with one clearer system for customers, operations, and reports.";
+  }
+
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 function normalizeModelName(modelName) {
   const name = String(modelName || "").trim();
   return name.startsWith("models/") ? name.slice("models/".length) : name;
@@ -644,6 +669,9 @@ function getLocalAgentReply(customerText, history = []) {
   const offeredDemo = wasAsked(history, /10-minute demo|short demo|demo/i);
 
   if (!text || /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text)) {
+    if (hasIntroducedPooja(history)) {
+      return "Hi. DP vision helps businesses replace scattered tracking with one clearer system for customers, operations, and reports.";
+    }
     return "Hi, this is Pooja from DP vision Analytics. We build custom CRM, ERP, automation, and dashboard systems for growing teams. Is this relevant for your business?";
   }
 
@@ -762,7 +790,7 @@ async function getGeminiReply(callSid, customerText) {
     if (userText) {
       callHistories.set(callSid, history.concat([{ role: "user", text: userText }]).slice(-MAX_HISTORY_TURNS));
     }
-    return getLocalAgentReply(userText, history);
+    return removeRepeatedIntroduction(getLocalAgentReply(userText, history), history);
   }
 
   const conversation = [...history];
@@ -783,7 +811,7 @@ async function getGeminiReply(callSid, customerText) {
         .concat([{ role: "model", text: closingReply }])
         .slice(-MAX_HISTORY_TURNS)
     );
-    return closingReply;
+    return removeRepeatedIntroduction(closingReply, conversation);
   }
 
   const candidates = await ensureModelCandidates();
@@ -809,9 +837,9 @@ async function getGeminiReply(callSid, customerText) {
 
       const text = response.text?.trim();
       if (text) {
-        const normalizedText = normalizeCompanyName(text);
+        const normalizedText = removeRepeatedIntroduction(normalizeCompanyName(text), conversation);
         if (isWeakDiscoveryReply(userText, normalizedText, conversation)) {
-          const fallbackText = normalizeCompanyName(getLocalAgentReply(userText, conversation));
+          const fallbackText = removeRepeatedIntroduction(normalizeCompanyName(getLocalAgentReply(userText, conversation)), conversation);
           callHistories.set(
             callSid,
             conversation
@@ -845,7 +873,7 @@ async function getGeminiReply(callSid, customerText) {
 
   lastGeminiError = errors.length > 0 ? errors.join(" | ") : "No supported Gemini model returned text.";
   callHistories.set(callSid, conversation.slice(-MAX_HISTORY_TURNS));
-  return normalizeCompanyName(getLocalAgentReply(userText, conversation));
+  return removeRepeatedIntroduction(normalizeCompanyName(getLocalAgentReply(userText, conversation)), conversation);
 }
 
 function getLocalSentiment(text) {
