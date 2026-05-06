@@ -552,6 +552,10 @@ function getLocalAgentReply(customerText) {
     return "Hi, this is Pooja from DP vision Analytics. We help businesses connect CRM, ERP, automation, and reporting into cleaner workflows. Is that relevant for your team?";
   }
 
+  if (/^(yes|yeah|yep|sure|okay|ok|go ahead|tell me|haan|ha)$/i.test(lower)) {
+    return "Great. Quick question: are your sales, operations, reports, or follow-ups currently managed across separate tools?";
+  }
+
   if (/\b(bye|goodbye|end|hang up|stop|not interested)\b/i.test(lower)) {
     return "No worries, thanks for your time. Have a good day. [END_CALL]";
   }
@@ -1637,10 +1641,10 @@ async function startServer() {
 
   app.post("/twilio/voice", (req, res) => {
     const callSid = req.body.CallSid || `call-${Date.now()}`;
-    if (!callHistories.has(callSid)) {
-      callHistories.set(callSid, []);
-    }
     const { openingLine } = getPromptParts();
+    if (!callHistories.has(callSid)) {
+      callHistories.set(callSid, [{ role: "model", text: openingLine }]);
+    }
     const liveSession = ensureLiveCallSession(callSid, {
       to: req.body.To || "",
       status: "in-progress",
