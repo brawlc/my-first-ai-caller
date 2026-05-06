@@ -23,7 +23,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: VITE_CLIENT_ID
-        sync: false
+        value: 1011539253936-t4u89nkhik9tfqhveeqcvphariatmr7h.apps.googleusercontent.com
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
