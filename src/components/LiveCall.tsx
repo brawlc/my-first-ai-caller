@@ -22,6 +22,8 @@ type AgentStatus = {
   aiMode?: string;
   configuredModel?: string;
   model?: string;
+  quotaLimited?: boolean;
+  statusMessage?: string;
   lastGeminiError?: string;
 };
 
@@ -674,7 +676,7 @@ export const LiveCall = () => {
         <div>
           <h2 className="text-lg font-bold uppercase tracking-tight">Live Gemini Call</h2>
           <p className="text-xs text-zinc-500 font-mono uppercase">
-            Mode: {agentStatus.aiMode || 'unknown'} | Model: {agentStatus.model || 'unknown'}
+            Mode: {agentStatus.aiMode || 'unknown'} | Model: {agentStatus.quotaLimited ? 'built-in sales flow' : agentStatus.model || 'unknown'}
           </p>
           {livePhoneCallSid && (
             <p className="text-[11px] mt-1 text-cyan-300">
@@ -686,7 +688,10 @@ export const LiveCall = () => {
           </p>
           {connectedCalendarSummary && <p className="text-[11px] text-zinc-500">Calendar account: {connectedCalendarSummary}</p>}
           <p className="text-[11px] text-zinc-500">OAuth Client: {maskedClientId}</p>
-          {agentStatus.lastGeminiError && (
+          {agentStatus.statusMessage && (
+            <p className="text-[11px] text-amber-300 mt-1">{agentStatus.statusMessage}</p>
+          )}
+          {agentStatus.lastGeminiError && !agentStatus.quotaLimited && (
             <p className="text-[11px] text-red-300 mt-1">Gemini issue: {agentStatus.lastGeminiError}</p>
           )}
           {calendarStatus && (

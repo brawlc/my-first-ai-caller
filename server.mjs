@@ -1364,14 +1364,19 @@ async function startServer() {
   app.get("/api/agent-status", (_req, res) => {
     pruneAndroidSessions();
     const quotaBlockedModelNames = getQuotaBlockedModels();
+    const quotaLimited = quotaBlockedModelNames.length > 0 || isQuotaError(lastGeminiError);
     res.json({
       geminiReady: Boolean(geminiApiKey),
-      aiMode: ai ? "gemini" : "local fallback",
+      aiMode: quotaLimited || !ai ? "sales fallback" : "gemini",
       configuredModel,
       model: ai ? activeModel : "none",
       modelCandidates: discoveredModelCandidates,
       quotaBlockedModels: quotaBlockedModelNames,
-      lastGeminiError,
+      quotaLimited,
+      statusMessage: quotaLimited
+        ? "Gemini quota is cooling down. Pooja is using the built-in sales flow until quota resets."
+        : "",
+      lastGeminiError: quotaLimited ? "" : lastGeminiError,
       androidGatewayReady: true,
       activeAndroidSessions: androidSessions.size,
     });
