@@ -339,11 +339,38 @@ export const LiveCall = () => {
   const loadLivePhoneCall = useCallback(async (callSid: string) => {
     try {
       const response = await fetch(`/api/live-calls/${encodeURIComponent(callSid)}`);
-      if (!response.ok) return;
+      if (!response.ok) {
+        const latestResponse = await fetch('/api/live-calls/latest');
+        if (!latestResponse.ok) return;
+        const latestData = (await latestResponse.json()) as LivePhoneCall;
+        if (!latestData.callSid) return;
+        setLivePhoneCallSid(latestData.callSid);
+        setLivePhoneCallStatus(latestData.status || '');
+        setLivePhoneCallEvents(Array.isArray(latestData.events) ? latestData.events : []);
+        if (latestData.status === 'ended') {
+          setIsCalling(false);
+        }
+        return;
+      }
       const data = (await response.json()) as LivePhoneCall;
-      setLivePhoneCallStatus(data.status || '');
-      setLivePhoneCallEvents(Array.isArray(data.events) ? data.events : []);
-      if (data.status === 'ended') {
+      let events = Array.isArray(data.events) ? data.events : [];
+      let status = data.status || '';
+
+      if (!events.length && data.status !== 'ended') {
+        const latestResponse = await fetch('/api/live-calls/latest');
+        if (latestResponse.ok) {
+          const latestData = (await latestResponse.json()) as LivePhoneCall;
+          if (latestData.callSid && latestData.callSid !== callSid) {
+            setLivePhoneCallSid(latestData.callSid);
+            events = Array.isArray(latestData.events) ? latestData.events : [];
+            status = latestData.status || status;
+          }
+        }
+      }
+
+      setLivePhoneCallStatus(status);
+      setLivePhoneCallEvents(events);
+      if (status === 'ended') {
         setIsCalling(false);
       }
     } catch (error) {

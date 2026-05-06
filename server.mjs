@@ -259,8 +259,10 @@ async function startOutboundAiCall({ req, toNumber }) {
     Method: "POST",
     StatusCallback: `${publicBaseUrl}/twilio/status`,
     StatusCallbackMethod: "POST",
-    StatusCallbackEvent: "initiated ringing answered completed",
   });
+  for (const eventName of ["initiated", "ringing", "answered", "completed"]) {
+    params.append("StatusCallbackEvent", eventName);
+  }
 
   if (DIALER_MODE === "sip" && SIP_AUTH_USERNAME && SIP_AUTH_PASSWORD) {
     params.set("SipAuthUsername", SIP_AUTH_USERNAME);
@@ -1686,16 +1688,30 @@ async function startServer() {
 
   app.post("/twilio/status", (req, res) => {
     const callSid = String(req.body.CallSid || "").trim();
+    const parentCallSid = String(req.body.ParentCallSid || "").trim();
     const callStatus = String(req.body.CallStatus || req.body.CallStatusCallbackEvent || "").trim().toLowerCase();
+    const statusTargetSids = [callSid, parentCallSid].filter(Boolean);
     if (callSid) {
-      if (["completed", "canceled", "busy", "failed", "no-answer"].includes(callStatus)) {
-        callHistories.delete(callSid);
-        markLiveCallEnded(callSid);
-      } else if (callStatus) {
-        ensureLiveCallSession(callSid, {
-          to: req.body.To || "",
+      console.log(
+        "Twilio status:",
+        JSON.stringify({
+          callSid,
+          parentCallSid,
           status: callStatus,
-        });
+          to: req.body.To || "",
+          from: req.body.From || "",
+        })
+      );
+      for (const sid of statusTargetSids) {
+        if (["completed", "canceled", "busy", "failed", "no-answer"].includes(callStatus)) {
+          callHistories.delete(sid);
+          markLiveCallEnded(sid);
+        } else if (callStatus) {
+          ensureLiveCallSession(sid, {
+            to: req.body.To || "",
+            status: callStatus,
+          });
+        }
       }
     }
     res.type("text/plain").send("ok");
