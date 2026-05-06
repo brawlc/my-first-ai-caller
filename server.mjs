@@ -97,10 +97,15 @@ function appendLiveCallEvent(callSid, role, text) {
 
   const session = ensureLiveCallSession(callSid);
   if (!session) return;
+  const normalizedRole = role === "agent" ? "agent" : "user";
+  const lastEvent = session.events[session.events.length - 1];
+  if (lastEvent?.role === normalizedRole && String(lastEvent.text || "").trim() === normalizedText) {
+    return;
+  }
 
   session.events.push({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role: role === "agent" ? "agent" : "user",
+    role: normalizedRole,
     text: normalizedText,
     timestamp: new Date().toISOString(),
   });
@@ -620,7 +625,7 @@ function getLocalAgentReply(customerText, history = []) {
     return "Great. We usually help when teams are outgrowing Excel, WhatsApp, or disconnected software. Would a 10-minute demo be useful?";
   }
 
-  if (/\b(bye|goodbye|end|hang up|stop|not interested)\b/i.test(lower)) {
+  if (/\b(no|nope|nah|sorry|not interested|bye|goodbye|end|hang up|stop)\b/i.test(lower)) {
     return "No worries, thanks for your time. Have a good day. [END_CALL]";
   }
 

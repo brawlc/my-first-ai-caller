@@ -73,6 +73,20 @@ type PersistedLiveCallSession = {
   inputText: string;
 };
 
+function appendUniqueMessage(messages: ChatMessage[], message: ChatMessage) {
+  const normalizedText = message.text.trim();
+  if (!normalizedText) return messages;
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role === message.role && lastMessage.text.trim() === normalizedText) {
+    return messages;
+  }
+  return [...messages, { ...message, text: normalizedText }];
+}
+
+function dedupeAdjacentMessages(messages: ChatMessage[]) {
+  return messages.reduce<ChatMessage[]>((uniqueMessages, message) => appendUniqueMessage(uniqueMessages, message), []);
+}
+
 function loadPersistedSession(): PersistedLiveCallSession {
   if (typeof window === 'undefined') {
     return { isCalling: false, messages: [], inputText: '' };
@@ -152,11 +166,13 @@ export const LiveCall = () => {
   }, [messages]);
 
   const displayMessages = useMemo<ChatMessage[]>(() => {
-    if (!livePhoneCallEvents.length) return messages;
-    return livePhoneCallEvents.map((event) => ({
-      role: event.role,
-      text: event.text,
-    }));
+    if (!livePhoneCallEvents.length) return dedupeAdjacentMessages(messages);
+    return dedupeAdjacentMessages(
+      livePhoneCallEvents.map((event) => ({
+        role: event.role,
+        text: event.text,
+      }))
+    );
   }, [livePhoneCallEvents, messages]);
 
   const maskedClientId = useMemo(() => {
@@ -307,7 +323,7 @@ export const LiveCall = () => {
     idleTimerRef.current = window.setTimeout(() => {
       const line = idleCheckLines[idleCheckCountRef.current] || idleCheckLines[idleCheckLines.length - 1];
       idleCheckCountRef.current += 1;
-      setMessages((prev) => [...prev, { role: 'agent', text: line }]);
+      setMessages((prev) => appendUniqueMessage(prev, { role: 'agent', text: line }));
       speak(line);
     }, IDLE_CHECK_DELAY_MS);
 
@@ -557,7 +573,7 @@ export const LiveCall = () => {
     if (!userText || !isCalling) return;
 
     const userMessage: ChatMessage = { role: 'user', text: userText };
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => appendUniqueMessage(prev, userMessage));
 
     void analyzeSentiment(userText).then((sentiment) => {
       setMessages((prev) =>
@@ -579,13 +595,12 @@ export const LiveCall = () => {
           calendarToken = (await connectCalendar()) || undefined;
         } catch (error) {
           const reason = error instanceof Error ? error.message : 'Calendar permission was not granted.';
-          setMessages((prev) => [
-            ...prev,
-            {
+          setMessages((prev) =>
+            appendUniqueMessage(prev, {
               role: 'agent',
               text: `I can book this for you as soon as Calendar permission is approved. Current issue: ${reason}`,
-            },
-          ]);
+            })
+          );
           setIsTyping(false);
           return;
         }
@@ -599,7 +614,7 @@ export const LiveCall = () => {
       const shouldEnd = result.text.includes('[END_CALL]');
       const cleanText = result.text.replace('[END_CALL]', '').trim();
 
-      setMessages((prev) => [...prev, { role: 'agent', text: cleanText }]);
+      setMessages((prev) => appendUniqueMessage(prev, { role: 'agent', text: cleanText }));
       if (cleanText) speak(cleanText);
 
       if (shouldEnd) {
