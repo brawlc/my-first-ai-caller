@@ -187,7 +187,25 @@ export const VoicePackSettings = () => {
     }
   };
 
-  const testVoicePack = () => {
+  const waitForBrowserVoices = async () => {
+    if (!window.speechSynthesis) return [] as SpeechSynthesisVoice[];
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length) return voices;
+
+    return await new Promise<SpeechSynthesisVoice[]>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.speechSynthesis.removeEventListener?.('voiceschanged', finish);
+        resolve(window.speechSynthesis.getVoices());
+      };
+      window.speechSynthesis.addEventListener?.('voiceschanged', finish);
+      window.setTimeout(finish, 800);
+    });
+  };
+
+  const testVoicePack = async () => {
     const sampleText =
       selectedLanguage.id === 'hinglish' || selectedLanguage.id === 'hindi'
         ? 'Namaste, main Pooja bol rahi hoon DP vision Analytics se. Kya aapke paas ek minute hai?'
@@ -206,19 +224,32 @@ export const VoicePackSettings = () => {
       utterance.lang = selectedAccent.language;
       utterance.rate = 1.02;
       utterance.pitch = selectedAccent.id.includes('male') ? 0.9 : 1.02;
-      const voices = window.speechSynthesis.getVoices();
+      const voices = await waitForBrowserVoices();
       const matchingVoice =
         voices.find((voice) => voice.lang === selectedAccent.language && voice.name.toLowerCase().includes(selectedAccent.label.split(' ')[0].toLowerCase())) ||
         voices.find((voice) => voice.lang === selectedAccent.language) ||
         voices.find((voice) => voice.lang.toLowerCase().startsWith(selectedAccent.language.split('-')[0].toLowerCase()));
       if (matchingVoice) utterance.voice = matchingVoice;
-      utterance.onend = () => setIsTesting(false);
+      const resumeTimer = window.setInterval(() => {
+        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      }, 250);
+      utterance.onend = () => {
+        window.clearInterval(resumeTimer);
+        setIsTesting(false);
+      };
       utterance.onerror = () => {
+        window.clearInterval(resumeTimer);
         setIsTesting(false);
         setStatus({ tone: 'error', text: 'Could not play the voice preview.' });
       };
       window.speechSynthesis.speak(utterance);
-      setStatus({ tone: 'neutral', text: 'Playing browser preview. Real phone calls use Twilio voice settings.' });
+      window.speechSynthesis.resume();
+      setStatus({
+        tone: 'neutral',
+        text: matchingVoice
+          ? `Playing browser preview with ${matchingVoice.name}. Real phone calls use Twilio voice settings.`
+          : 'Playing browser preview with the default browser voice. Real phone calls use Twilio voice settings.',
+      });
     } catch (error) {
       setIsTesting(false);
       const message = error instanceof Error ? error.message : 'Could not play the voice preview.';
