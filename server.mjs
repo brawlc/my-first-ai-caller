@@ -623,6 +623,20 @@ function isClearRejection(text) {
   );
 }
 
+function isAcknowledgementOnly(text) {
+  return /^(okay|ok|alright|all right|got it|understood|hmm|mm|fine|acha|achha|theek hai)[\s.!?,]*$/i.test(
+    String(text || "").trim()
+  );
+}
+
+function isDemoConsent(text) {
+  const lower = String(text || "").trim().toLowerCase();
+  return (
+    /\b(book|schedule|demo|meeting|call back|callback|send invite|calendar)\b/i.test(lower) ||
+    /\b(yes|yeah|yep|sure|okay|ok|works|perfect)\b.*\b(book|schedule|demo|meeting|slot|time|email|invite)\b/i.test(lower)
+  );
+}
+
 function getLocalAgentReply(customerText, history = []) {
   const text = String(customerText || "").trim();
   const lower = text.toLowerCase();
@@ -633,10 +647,15 @@ function getLocalAgentReply(customerText, history = []) {
     return "Hi, this is Pooja from DP vision Analytics. We build custom CRM, ERP, automation, and dashboard systems for growing teams. Is this relevant for your business?";
   }
 
-  if (/^(yes|yeah|yep|sure|okay|ok|go ahead|tell me|haan|ha)[\s.!?,]*$/i.test(lower)) {
-    if (offeredDemo || agentQuestionCount >= 2) {
-      return "Perfect. Share a preferred time and email, and I can arrange a short demo with the DP vision team.";
-    }
+  if (isAcknowledgementOnly(lower)) {
+    return "Sure. In simple terms, DP vision helps businesses replace scattered tracking with one clearer system for customers, operations, and reports.";
+  }
+
+  if (isDemoConsent(lower)) {
+    return "Perfect. Share a preferred time and email, and I can arrange a short demo with the DP vision team.";
+  }
+
+  if (/^(yes|yeah|yep|sure|go ahead|tell me|haan|ha)[\s.!?,]*$/i.test(lower)) {
     return "Great. We usually help when teams are outgrowing Excel, WhatsApp, or disconnected software. Would a 10-minute demo be useful?";
   }
 
@@ -704,11 +723,12 @@ function buildRuntimeCallRules(history) {
   return `${previousReplies}
 
 Live-call control rules:
-- If the caller only says yes, okay, sure, or go ahead, do not repeat the opener or another permission question.
-- Be a sales agent, not an interviewer: lead with a useful benefit, ask at most one light qualifying question, then offer a short demo or callback.
+- If the caller only says okay, ok, got it, or understood, treat it as acknowledgement, not consent to book a demo.
+- Only ask for demo timing/email after clear booking intent such as "book it", "schedule", "yes for demo", or a date/time.
+- Be a helpful sales agent, not pushy: lead with useful information, ask at most one light qualifying question, and let the caller choose next step.
 - Do not ask long menu questions with many options.
-- If the caller gives a vague answer, briefly explain the value and move toward a demo instead of asking another discovery question.
-- After two Pooja questions in the call, stop qualifying and ask for demo timing, email, or callback timing.
+- If the caller gives a vague answer, briefly explain the value and offer to answer a question instead of pushing a demo.
+- After two Pooja questions in the call, stop qualifying and provide helpful context or offer a callback, without demanding time/email.
 - Never say the same company/service list twice in the same call.`.trim();
 }
 
