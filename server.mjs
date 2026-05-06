@@ -189,6 +189,9 @@ async function startOutboundAiCall({ req, toNumber }) {
     From: TWILIO_FROM_NUMBER,
     Url: voiceUrl,
     Method: "POST",
+    StatusCallback: `${publicBaseUrl}/twilio/status`,
+    StatusCallbackMethod: "POST",
+    StatusCallbackEvent: "initiated ringing answered completed",
   });
 
   if (DIALER_MODE === "sip" && SIP_AUTH_USERNAME && SIP_AUTH_PASSWORD) {
@@ -1538,6 +1541,23 @@ async function startServer() {
       appendLiveCallEvent(callSid, "agent", errorLine);
       res.type("text/xml").send(twiml(gather(errorLine)));
     }
+  });
+
+  app.post("/twilio/status", (req, res) => {
+    const callSid = String(req.body.CallSid || "").trim();
+    const callStatus = String(req.body.CallStatus || req.body.CallStatusCallbackEvent || "").trim().toLowerCase();
+    if (callSid) {
+      if (["completed", "canceled", "busy", "failed", "no-answer"].includes(callStatus)) {
+        callHistories.delete(callSid);
+        markLiveCallEnded(callSid);
+      } else if (callStatus) {
+        ensureLiveCallSession(callSid, {
+          to: req.body.To || "",
+          status: callStatus,
+        });
+      }
+    }
+    res.type("text/plain").send("ok");
   });
 
   const distPath = path.join(process.cwd(), "dist");
