@@ -652,6 +652,10 @@ function getLocalAgentReply(customerText, history = []) {
     return "DP vision Analytics builds custom CRM, ERP, automation, and dashboard systems so business work is easier to track. I can arrange a quick demo if useful.";
   }
 
+  if (/\b(tell me more|more information|more info|explain|details first|information first|know more|share more)\b/i.test(lower)) {
+    return "Sure. DP vision builds custom CRM, ERP, automation, and dashboards so teams can track work, follow-ups, and reports in one place.";
+  }
+
   if (/\b(crm|erp|inventory|sales|operations|finance|account|accounts)\b/i.test(lower)) {
     return "That makes sense. A custom CRM or ERP can bring that into one place instead of scattered tracking. Would you like a quick demo?";
   }
@@ -668,7 +672,7 @@ function getLocalAgentReply(customerText, history = []) {
     return "A DP vision specialist can confirm exact pricing for your scope. If you share a date, time, and email, I can help set up a short demo.";
   }
 
-  if (/\b(email|send|details|brochure|info|information)\b/i.test(lower)) {
+  if (/\b(email|send|brochure)\b/i.test(lower)) {
     return "Sure, what email should I send the details to? I can also book a quick demo if you share a preferred date and time.";
   }
 
