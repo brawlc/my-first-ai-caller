@@ -618,8 +618,8 @@ function isClearRejection(text) {
   if (!lower) return false;
   if (isMixedIntent(lower)) return false;
   return (
-    /^(no|nope|nah|no sorry|sorry no|not intere?sted|not intrested|sorry not intere?sted|sorry not intrested|stop|end|bye|goodbye|hang up)[\s.!?,]*$/i.test(lower) ||
-    /\b(not intere?sted|not intrested|stop calling|don't call|do not call|hang up|end the call|bye|goodbye)\b/i.test(lower)
+    /^(no|nope|nah|no sorry|sorry no|no thanks|no thank you|not now thanks|not intere?sted|not intrested|sorry not intere?sted|sorry not intrested|stop|end|bye|goodbye|hang up)[\s.!?,]*$/i.test(lower) ||
+    /\b(no thanks|no thank you|not now thanks|not intere?sted|not intrested|stop calling|don't call|do not call|hang up|end the call|bye|goodbye)\b/i.test(lower)
   );
 }
 
