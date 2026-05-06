@@ -9,8 +9,8 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 const PORT = Number(process.env.PORT || 3001);
-const TWILIO_VOICE = process.env.TWILIO_VOICE || "Polly.Aditi";
-const TWILIO_GATHER_LANGUAGE = String(process.env.TWILIO_GATHER_LANGUAGE || "en-IN").trim();
+const DEFAULT_TWILIO_VOICE = process.env.TWILIO_VOICE || "Polly.Aditi";
+const DEFAULT_TWILIO_GATHER_LANGUAGE = String(process.env.TWILIO_GATHER_LANGUAGE || "en-IN").trim();
 const TWILIO_GATHER_TIMEOUT = String(process.env.TWILIO_GATHER_TIMEOUT || "15").trim();
 const TWILIO_GATHER_SPEECH_TIMEOUT = String(process.env.TWILIO_GATHER_SPEECH_TIMEOUT || "auto").trim();
 const TWILIO_SPEECH_MODEL = String(process.env.TWILIO_SPEECH_MODEL || "").trim();
@@ -50,6 +50,12 @@ const generationDefaults = {
 const schedulingStates = new Map();
 const androidSessions = new Map();
 let mongoClientPromise = null;
+let voiceSettings = {
+  voice: DEFAULT_TWILIO_VOICE,
+  language: DEFAULT_TWILIO_GATHER_LANGUAGE,
+  label: "Indian English - Pooja",
+  promptLanguage: "English with a natural Indian tone",
+};
 const GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3";
 const MAX_HISTORY_TURNS = 20;
 const ANDROID_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
@@ -331,11 +337,32 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
+function getVoiceSettings() {
+  return {
+    voice: String(voiceSettings.voice || DEFAULT_TWILIO_VOICE).trim() || DEFAULT_TWILIO_VOICE,
+    language: String(voiceSettings.language || DEFAULT_TWILIO_GATHER_LANGUAGE).trim() || DEFAULT_TWILIO_GATHER_LANGUAGE,
+    label: String(voiceSettings.label || "").trim(),
+    promptLanguage: String(voiceSettings.promptLanguage || "").trim(),
+  };
+}
+
+function normalizeVoiceSettings(input = {}) {
+  const language = String(input.language || DEFAULT_TWILIO_GATHER_LANGUAGE).trim();
+  const voice = String(input.voice || DEFAULT_TWILIO_VOICE).trim();
+  return {
+    voice: voice || DEFAULT_TWILIO_VOICE,
+    language: language || DEFAULT_TWILIO_GATHER_LANGUAGE,
+    label: String(input.label || `${language} - ${voice}`).trim(),
+    promptLanguage: String(input.promptLanguage || "the selected language").trim(),
+  };
+}
+
 function twiml(body) {
   return `<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`;
 }
 
 function say(text) {
+  const settings = getVoiceSettings();
   const spokenText = String(text)
     .replace(/\bD\s*P\s*vision\b/gi, "D P vision")
     .replace(/\bDP\s*vision\b/gi, "D P vision")
@@ -345,17 +372,18 @@ function say(text) {
     .replace(/\b(\d{1,2}):(\d{2})\s*(am|pm)\b/gi, "$1 $3")
     .replace(/\s+/g, " ")
     .trim();
-  return `<Say voice="${escapeXml(TWILIO_VOICE)}" language="en-IN">${escapeXml(spokenText)}</Say>`;
+  return `<Say voice="${escapeXml(settings.voice)}" language="${escapeXml(settings.language)}">${escapeXml(spokenText)}</Say>`;
 }
 
 function gather(prompt) {
+  const settings = getVoiceSettings();
   const attributes = [
     `input="speech dtmf"`,
     `action="/twilio/respond"`,
     `method="POST"`,
     `timeout="${escapeXml(TWILIO_GATHER_TIMEOUT)}"`,
     `speechTimeout="${escapeXml(TWILIO_GATHER_SPEECH_TIMEOUT)}"`,
-    `language="${escapeXml(TWILIO_GATHER_LANGUAGE)}"`,
+    `language="${escapeXml(settings.language)}"`,
     `actionOnEmptyResult="true"`,
   ];
   if (TWILIO_SPEECH_MODEL) {
@@ -618,6 +646,10 @@ function getLocalAgentReply(customerText) {
 async function getGeminiReply(callSid, customerText) {
   const history = normalizeHistory(callHistories.get(callSid) || []);
   const { systemPrompt } = getPromptParts();
+  const settings = getVoiceSettings();
+  const languageInstruction = settings.promptLanguage
+    ? `\n\nCurrent call language and voice pack: ${settings.label || settings.language}. Reply in ${settings.promptLanguage}. Keep the same phone-call style and do not translate the company name DP vision Analytics.`
+    : "";
   const userText = String(customerText || "").trim();
 
   if (!ai) {
@@ -650,8 +682,8 @@ async function getGeminiReply(callSid, customerText) {
     try {
       const response = await ai.models.generateContent({
         model,
-        config: systemPrompt
-          ? { ...generationDefaults, systemInstruction: systemPrompt }
+        config: systemPrompt || languageInstruction
+          ? { ...generationDefaults, systemInstruction: `${systemPrompt || ""}${languageInstruction}`.trim() }
           : generationDefaults,
         contents: conversation.map((entry) => ({
           role: entry.role,
@@ -1453,6 +1485,15 @@ async function startServer() {
 
   app.get("/api/agent-prompt", (_req, res) => {
     res.type("text/plain").send(getPromptText());
+  });
+
+  app.get("/api/voice-settings", (_req, res) => {
+    res.json({ ok: true, ...getVoiceSettings() });
+  });
+
+  app.put("/api/voice-settings", (req, res) => {
+    voiceSettings = normalizeVoiceSettings(req.body || {});
+    res.json({ ok: true, ...getVoiceSettings() });
   });
 
   app.put("/api/agent-prompt", express.text({ type: "*/*" }), (req, res) => {

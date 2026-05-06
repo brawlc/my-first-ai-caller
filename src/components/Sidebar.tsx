@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, PhoneCall, BarChart3, SlidersHorizontal, Mic2 } from 'lucide-react';
+import { LayoutDashboard, Users, PhoneCall, BarChart3, SlidersHorizontal, Mic2, Languages } from 'lucide-react';
 
 export const Sidebar = () => {
   const links = [
@@ -8,6 +8,7 @@ export const Sidebar = () => {
     { to: '/leads', icon: Users, label: 'Lead Management' },
     { to: '/live', icon: PhoneCall, label: 'Live Agent' },
     { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+    { to: '/voice-packs', icon: Languages, label: 'Voice Packs' },
     { to: '/settings', icon: SlidersHorizontal, label: 'Prompt' },
   ];
 

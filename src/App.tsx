@@ -6,6 +6,7 @@ import { LeadManager } from './components/LeadManager';
 import { LiveCall } from './components/LiveCall';
 import { ResponseRulesEditor } from './components/ResponseRulesEditor';
 import { Analytics } from './components/Analytics';
+import { VoicePackSettings } from './components/VoicePackSettings';
 
 const Settings = () => <ResponseRulesEditor />;
 
@@ -20,6 +21,7 @@ export default function App() {
             <Route path="/leads" element={<LeadManager />} />
             <Route path="/live" element={<LiveCall />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/voice-packs" element={<VoicePackSettings />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
