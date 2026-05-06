@@ -434,6 +434,20 @@ export const LiveCall = () => {
           setIsCalendarConnected(false);
           setConnectedCalendarSummary('');
         }
+      } else {
+        try {
+          const silentToken = await getAccessToken({ interactive: false });
+          const calendarInfo = await getConnectedCalendarInfo(silentToken);
+          if (!isMounted) return;
+          setIsCalendarConnected(true);
+          setConnectedCalendarSummary(calendarInfo.summary || calendarInfo.id);
+          setGoogleAccountHint(calendarInfo.id || calendarInfo.summary);
+          setCalendarStatus({ tone: 'success', text: `Google Calendar connected: ${calendarInfo.summary || calendarInfo.id}` });
+        } catch (_error) {
+          if (!isMounted) return;
+          setIsCalendarConnected(false);
+          setConnectedCalendarSummary('');
+        }
       }
     };
 

@@ -158,9 +158,6 @@ export async function getAccessToken(options?: { interactive?: boolean }): Promi
   }
 
   const interactive = options?.interactive !== false;
-  if (!interactive) {
-    throw new Error('No active Google Calendar session. Interactive sign-in required.');
-  }
 
   return new Promise((resolve, reject) => {
     try {
@@ -206,7 +203,7 @@ export async function getAccessToken(options?: { interactive?: boolean }): Promi
           }
         },
       });
-      client.requestAccessToken({ prompt: interactive ? (accessTokenCache ? '' : 'consent') : 'none' });
+      client.requestAccessToken({ prompt: interactive ? (accessTokenCache ? '' : 'consent') : '' });
     } catch (error) {
       reject(error);
     }
