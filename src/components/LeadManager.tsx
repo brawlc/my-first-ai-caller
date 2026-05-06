@@ -13,6 +13,20 @@ type CalendarStatus = {
 
 type LeadForm = Pick<Lead, 'id' | 'name' | 'company' | 'email' | 'phone' | 'status'>;
 
+type LivePhoneCallEvent = {
+  id: string;
+  role: 'agent' | 'user';
+  text: string;
+  timestamp: string;
+};
+
+type LivePhoneCall = {
+  callSid: string;
+  to?: string;
+  status?: string;
+  events?: LivePhoneCallEvent[];
+};
+
 const DEFAULT_LEADS: Lead[] = [
   { id: '1', name: 'James Wilson', company: 'TechFlow Inc', email: 'james@techflow.com', phone: '+1 555-0123', status: 'pending' },
   { id: '2', name: 'Maria Garcia', company: 'Global Logistics', email: 'maria@globallog.com', phone: '+1 555-4567', status: 'converted', sentiment: 'Positive' },
@@ -69,6 +83,10 @@ export const LeadManager = () => {
   const [dataStatus, setDataStatus] = useState<CalendarStatus | null>({ tone: 'neutral', text: 'Loading leads...' });
   const [callStatus, setCallStatus] = useState<CalendarStatus | null>(null);
   const [callingLeadId, setCallingLeadId] = useState<string | null>(null);
+  const [activeLeadCallSid, setActiveLeadCallSid] = useState('');
+  const [activeLeadCallName, setActiveLeadCallName] = useState('');
+  const [activeLeadCallStatus, setActiveLeadCallStatus] = useState('');
+  const [activeLeadCallEvents, setActiveLeadCallEvents] = useState<LivePhoneCallEvent[]>([]);
   const [openActionLeadId, setOpenActionLeadId] = useState<string | null>(null);
   const [editingLead, setEditingLead] = useState<LeadForm | null>(null);
 
@@ -112,6 +130,37 @@ export const LeadManager = () => {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeLeadCallSid) return undefined;
+
+    let stopped = false;
+    const loadCall = async () => {
+      try {
+        const response = await fetch(`/api/live-calls/${encodeURIComponent(activeLeadCallSid)}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as LivePhoneCall;
+        if (stopped) return;
+        setActiveLeadCallStatus(payload.status || '');
+        setActiveLeadCallEvents(Array.isArray(payload.events) ? payload.events : []);
+        if (payload.status === 'ended') {
+          setCallStatus({ tone: 'success', text: `Call with ${activeLeadCallName || 'lead'} ended.` });
+        }
+      } catch (error) {
+        console.warn('Could not load lead call status', error);
+      }
+    };
+
+    void loadCall();
+    const timer = window.setInterval(() => {
+      void loadCall();
+    }, 1500);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [activeLeadCallName, activeLeadCallSid]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -306,7 +355,11 @@ export const LeadManager = () => {
         throw new Error(payload.error || 'Could not start call.');
       }
 
-      setCallStatus({ tone: 'success', text: `Calling ${lead.name} at ${payload.to}.` });
+      setActiveLeadCallSid(payload.callSid || '');
+      setActiveLeadCallName(lead.name);
+      setActiveLeadCallStatus(payload.status || 'queued');
+      setActiveLeadCallEvents([]);
+      setCallStatus({ tone: 'success', text: `Calling ${lead.name} at ${payload.to}. Status: ${payload.status || 'queued'}.` });
       void updateLeadStatus(lead.id, 'called');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not start call.';
@@ -430,6 +483,55 @@ export const LeadManager = () => {
         >
           {callStatus.text}
         </div>
+      )}
+
+      {activeLeadCallSid && (
+        <section className="rounded-2xl border border-cyan-500/20 bg-zinc-950/80 p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-cyan-200">Live Lead Call</p>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                {activeLeadCallName || 'Lead'} | {activeLeadCallStatus || 'connecting'} | {activeLeadCallSid}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setActiveLeadCallSid('');
+                setActiveLeadCallName('');
+                setActiveLeadCallStatus('');
+                setActiveLeadCallEvents([]);
+              }}
+              className="self-start rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-[10px] font-bold uppercase text-zinc-300 hover:bg-zinc-800"
+            >
+              Hide
+            </button>
+          </div>
+          <div className="mt-4 max-h-72 space-y-3 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            {!activeLeadCallEvents.length ? (
+              <p className="text-[11px] font-mono uppercase text-zinc-500">
+                {activeLeadCallStatus === 'ringing'
+                  ? 'Phone is ringing...'
+                  : activeLeadCallStatus === 'in-progress'
+                    ? 'Waiting for speech...'
+                    : `Call status: ${activeLeadCallStatus || 'connecting'}`}
+              </p>
+            ) : (
+              activeLeadCallEvents.map((event) => (
+                <div key={event.id} className={`flex ${event.role === 'agent' ? 'justify-start' : 'justify-end'}`}>
+                  <div
+                    className={`max-w-[80%] rounded-2xl border px-4 py-3 text-sm ${
+                      event.role === 'agent'
+                        ? 'rounded-tl-none border-zinc-800 bg-zinc-900 text-zinc-100'
+                        : 'rounded-tr-none border-cyan-500/30 bg-cyan-600/15 text-cyan-50'
+                    }`}
+                  >
+                    {event.text}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
       )}
 
       <div className="grid grid-cols-12 gap-6">
