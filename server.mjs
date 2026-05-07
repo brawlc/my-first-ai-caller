@@ -11,8 +11,8 @@ dotenv.config();
 const PORT = Number(process.env.PORT || 3001);
 const DEFAULT_TWILIO_VOICE = process.env.TWILIO_VOICE || "Polly.Aditi";
 const DEFAULT_TWILIO_GATHER_LANGUAGE = String(process.env.TWILIO_GATHER_LANGUAGE || "en-IN").trim();
-const TWILIO_GATHER_TIMEOUT = String(process.env.TWILIO_GATHER_TIMEOUT || "8").trim();
-const TWILIO_GATHER_SPEECH_TIMEOUT = String(process.env.TWILIO_GATHER_SPEECH_TIMEOUT || "2").trim();
+const TWILIO_GATHER_TIMEOUT = normalizeGatherTimeout(process.env.TWILIO_GATHER_TIMEOUT, 8);
+const TWILIO_GATHER_SPEECH_TIMEOUT = normalizeGatherSpeechTimeout(process.env.TWILIO_GATHER_SPEECH_TIMEOUT, 2);
 const TWILIO_SPEECH_MODEL = String(process.env.TWILIO_SPEECH_MODEL || "").trim();
 const TWILIO_ENHANCED_SPEECH = String(process.env.TWILIO_ENHANCED_SPEECH || "false").trim().toLowerCase() === "true";
 const TWILIO_ACCOUNT_SID = String(process.env.TWILIO_ACCOUNT_SID || "").trim();
@@ -61,6 +61,20 @@ const GMAIL_BASE_URL = "https://gmail.googleapis.com/gmail/v1";
 const MAX_HISTORY_TURNS = 20;
 const ANDROID_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 const LIVE_CALL_TTL_MS = 2 * 60 * 60 * 1000;
+
+function normalizeGatherTimeout(value, fallback) {
+  const parsed = Number(String(value || "").trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) return String(fallback);
+  return String(Math.min(parsed, fallback));
+}
+
+function normalizeGatherSpeechTimeout(value, fallback) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "auto") return String(fallback);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return String(fallback);
+  return String(Math.min(parsed, fallback));
+}
 
 function pruneLiveCallSessions() {
   const now = Date.now();
