@@ -12,6 +12,8 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: TZ
+        value: Asia/Calcutta
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: DPVISION_AGENT_PROMPT_FILE

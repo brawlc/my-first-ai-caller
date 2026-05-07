@@ -8,6 +8,8 @@ import { MongoClient } from "mongodb";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
+process.env.TZ = process.env.TZ || "Asia/Calcutta";
+
 const PORT = Number(process.env.PORT || 3001);
 const DEFAULT_TWILIO_VOICE = process.env.TWILIO_VOICE || "Polly.Aditi";
 const DEFAULT_TWILIO_GATHER_LANGUAGE = String(process.env.TWILIO_GATHER_LANGUAGE || "en-IN").trim();
