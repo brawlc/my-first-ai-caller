@@ -11,8 +11,8 @@ dotenv.config();
 const PORT = Number(process.env.PORT || 3001);
 const DEFAULT_TWILIO_VOICE = process.env.TWILIO_VOICE || "Polly.Aditi";
 const DEFAULT_TWILIO_GATHER_LANGUAGE = String(process.env.TWILIO_GATHER_LANGUAGE || "en-IN").trim();
-const TWILIO_GATHER_TIMEOUT = String(process.env.TWILIO_GATHER_TIMEOUT || "15").trim();
-const TWILIO_GATHER_SPEECH_TIMEOUT = String(process.env.TWILIO_GATHER_SPEECH_TIMEOUT || "auto").trim();
+const TWILIO_GATHER_TIMEOUT = String(process.env.TWILIO_GATHER_TIMEOUT || "8").trim();
+const TWILIO_GATHER_SPEECH_TIMEOUT = String(process.env.TWILIO_GATHER_SPEECH_TIMEOUT || "2").trim();
 const TWILIO_SPEECH_MODEL = String(process.env.TWILIO_SPEECH_MODEL || "").trim();
 const TWILIO_ENHANCED_SPEECH = String(process.env.TWILIO_ENHANCED_SPEECH || "false").trim().toLowerCase() === "true";
 const TWILIO_ACCOUNT_SID = String(process.env.TWILIO_ACCOUNT_SID || "").trim();
@@ -45,7 +45,7 @@ const quotaBlockedModels = new Map();
 const generationDefaults = {
   temperature: 0.72,
   topP: 0.88,
-  maxOutputTokens: 75,
+  maxOutputTokens: 60,
 };
 const schedulingStates = new Map();
 const androidSessions = new Map();
@@ -57,6 +57,7 @@ let voiceSettings = {
   promptLanguage: "English with a natural Indian tone",
 };
 const GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3";
+const GMAIL_BASE_URL = "https://gmail.googleapis.com/gmail/v1";
 const MAX_HISTORY_TURNS = 20;
 const ANDROID_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 const LIVE_CALL_TTL_MS = 2 * 60 * 60 * 1000;
@@ -80,6 +81,11 @@ function ensureLiveCallSession(callSid, details = {}) {
   const session = {
     callSid: normalizedCallSid,
     to: details.to || existing.to || "",
+    leadName: details.leadName || existing.leadName || "",
+    leadEmail: details.leadEmail || existing.leadEmail || "",
+    calendarToken: details.calendarToken || existing.calendarToken || "",
+    followUpSentAt: existing.followUpSentAt || null,
+    followUpError: existing.followUpError || "",
     status: details.status || existing.status || "active",
     createdAt: existing.createdAt || now,
     lastUpdatedAt: now,
@@ -123,11 +129,28 @@ function markLiveCallEnded(callSid) {
   liveCallSessions.set(session.callSid, session);
 }
 
+function updateLiveCallSession(callSid, details = {}) {
+  const session = ensureLiveCallSession(callSid, details);
+  if (!session) return null;
+  for (const [key, value] of Object.entries(details)) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      session[key] = value;
+    }
+  }
+  session.lastUpdatedAt = Date.now();
+  liveCallSessions.set(session.callSid, session);
+  return session;
+}
+
 function buildLiveCallPayload(session) {
   if (!session) return null;
   return {
     callSid: session.callSid,
     to: session.to,
+    leadName: session.leadName || "",
+    leadEmail: session.leadEmail || "",
+    followUpSentAt: session.followUpSentAt || null,
+    followUpError: session.followUpError || "",
     status: session.status,
     createdAt: session.createdAt,
     lastUpdatedAt: session.lastUpdatedAt,
@@ -321,6 +344,9 @@ async function startOutboundAiCall({ req, toNumber }) {
 
   ensureLiveCallSession(payload.sid, {
     to: toNumber,
+    leadName: String(req.body?.leadName || "").trim(),
+    leadEmail: String(req.body?.leadEmail || "").trim(),
+    calendarToken: String(req.body?.calendarToken || "").trim(),
     status: payload.status || "queued",
   });
 
@@ -957,7 +983,12 @@ function isNegative(text) {
 }
 
 function extractEmail(text) {
-  const match = String(text).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const normalized = String(text || "")
+    .replace(/\s+(?:at|@)\s+/gi, "@")
+    .replace(/\s+(?:dot|\.)\s+/gi, ".")
+    .replace(/\s+/g, " ");
+  const compactSpokenEmail = normalized.replace(/([A-Z0-9._%+-])\s+(@|\.)\s*([A-Z0-9.-])/gi, "$1$2$3");
+  const match = compactSpokenEmail.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   return match ? match[0] : null;
 }
 
@@ -1346,6 +1377,106 @@ async function createDemoEvent(token, startTime, endTime, timeZone, leadName, em
   return calendarRequest(token, `/calendars/primary/events/${encodeURIComponent(created.id)}`, "GET");
 }
 
+function encodeBase64Url(value) {
+  return Buffer.from(String(value || ""), "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function buildEmailAddressList(value) {
+  return String(value || "")
+    .split(/[,\s;]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => extractEmail(entry));
+}
+
+async function gmailRequest(token, pathName, method, body) {
+  const response = await fetch(`${GMAIL_BASE_URL}${pathName}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(`Gmail ${method} ${pathName} failed: ${payload || response.statusText}`);
+  }
+
+  return response.json();
+}
+
+function buildCallSummaryEmail(session) {
+  const events = Array.isArray(session?.events) ? session.events : [];
+  const transcript = events
+    .map((event) => `${event.role === "agent" ? "Pooja" : "Client"}: ${event.text}`)
+    .join("\n");
+  const leadName = String(session?.leadName || "there").trim();
+  return [
+    `Hi ${leadName === "Lead" ? "there" : leadName},`,
+    "",
+    "Thanks for speaking with Pooja from DP vision Analytics.",
+    "",
+    "Here are the details from the call:",
+    transcript || "The call completed before a full transcript was captured.",
+    "",
+    "DP vision Analytics helps teams build custom CRM, ERP, automation, dashboard, and integration systems so work is easier to track in one place.",
+    "",
+    "Best,",
+    "DP vision Analytics",
+  ].join("\n");
+}
+
+async function sendGmailMessage(token, to, subject, textBody) {
+  const recipients = buildEmailAddressList(to);
+  if (!token || recipients.length === 0) return null;
+  const raw = [
+    `To: ${recipients.join(", ")}`,
+    `Subject: ${subject}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "",
+    textBody,
+  ].join("\r\n");
+  return gmailRequest(token, "/users/me/messages/send", "POST", { raw: encodeBase64Url(raw) });
+}
+
+async function finalizeLiveCallSession(callSid) {
+  const session = liveCallSessions.get(String(callSid || "").trim());
+  if (!session || session.followUpSentAt) return;
+
+  const history = normalizeHistory(callHistories.get(session.callSid) || []);
+  const leadDetails = extractLeadDetails(history, "");
+  const leadEmail = session.leadEmail || leadDetails.email;
+  if (leadEmail && !session.leadEmail) session.leadEmail = leadEmail;
+  if (!session.leadName && leadDetails.leadName) session.leadName = leadDetails.leadName;
+
+  if (!session.calendarToken || !leadEmail) {
+    liveCallSessions.set(session.callSid, session);
+    return;
+  }
+
+  try {
+    await sendGmailMessage(
+      session.calendarToken,
+      leadEmail,
+      "Details from DP vision Analytics",
+      buildCallSummaryEmail(session)
+    );
+    session.followUpSentAt = new Date().toISOString();
+    session.followUpError = "";
+  } catch (error) {
+    session.followUpError = readErrorMessage(error);
+    console.warn("Gmail follow-up failed:", session.followUpError);
+  } finally {
+    session.lastUpdatedAt = Date.now();
+    liveCallSessions.set(session.callSid, session);
+  }
+}
+
 async function maybeHandleSchedulingFlow({
   sessionId,
   history,
@@ -1360,15 +1491,22 @@ async function maybeHandleSchedulingFlow({
 
   const existingState = schedulingStates.get(normalizedSessionId);
   const leadDetails = extractLeadDetails(history, text);
-  let calendarInfo = null;
-  if (calendarToken) {
+  let cachedCalendarName = null;
+  const getCalendarName = async () => {
+    if (cachedCalendarName) return cachedCalendarName;
+    if (!calendarToken) {
+      cachedCalendarName = "your primary calendar";
+      return cachedCalendarName;
+    }
     try {
-      calendarInfo = await getPrimaryCalendarInfo(calendarToken);
+      const calendarInfo = await getPrimaryCalendarInfo(calendarToken);
+      cachedCalendarName = calendarInfo?.summary || "your primary calendar";
     } catch (error) {
       console.warn("Calendar identity lookup failed:", readErrorMessage(error));
+      cachedCalendarName = "your primary calendar";
     }
-  }
-  const calendarName = calendarInfo?.summary || "your primary calendar";
+    return cachedCalendarName;
+  };
 
   const bookOrSuggestSlot = async (requestedStart, bookingLeadDetails) => {
     const now = new Date();
@@ -1390,6 +1528,7 @@ async function maybeHandleSchedulingFlow({
         bookingLeadDetails.email
       );
       const slotLabel = toSlotLabel(requestedStart, tz);
+      const calendarName = await getCalendarName();
       return `Awesome, that slot is open and I have booked your demo on ${calendarName} for ${slotLabel}. ${
         event?.htmlLink ? `Open event: ${event.htmlLink}` : ""
       }`.trim();
@@ -1410,6 +1549,7 @@ async function maybeHandleSchedulingFlow({
 
     const firstConflict = slotCheck.conflicts?.[0];
     const conflictText = firstConflict ? `I can see a conflict: ${getEventLabel(firstConflict, tz)}. ` : "";
+    const calendarName = await getCalendarName();
     return `Sorry, that slot is already booked on ${calendarName}. ${conflictText}I can do ${toSlotLabel(alternative.start, tz)} instead. Want me to lock that in?`;
   };
 
@@ -1428,6 +1568,7 @@ async function maybeHandleSchedulingFlow({
       );
       schedulingStates.delete(normalizedSessionId);
       const slotLabel = toSlotLabel(new Date(existingState.startISO), tz);
+      const calendarName = await getCalendarName();
       return `Done, booked. I've scheduled your demo on ${calendarName} for ${slotLabel}. ${event?.htmlLink ? `Open it here: ${event.htmlLink}` : ""}`.trim();
     }
 
@@ -1455,13 +1596,16 @@ async function maybeHandleSchedulingFlow({
     return null;
   }
 
-  if (!calendarToken) {
-    return "Absolutely. Share your preferred date and time, and once Google Calendar is connected I'll check availability and book it for you.";
-  }
-
   const parsedRequest = parseRequestedDateTime(text);
   if (!parsedRequest) {
+    if (!calendarToken) {
+      return "Absolutely. Share your preferred date and time, and once Google Calendar is connected I'll check availability and book it for you.";
+    }
     return "Perfect, let's book it. Tell me the exact date and time (example: tomorrow 3:30 pm) and the best email for the invite.";
+  }
+
+  if (!calendarToken) {
+    return `I have the slot as ${toSlotLabel(parsedRequest.date, tz)}. Connect Google Calendar once and I can check availability and book it.`;
   }
 
   if (!parsedRequest.hasExplicitTime) {
@@ -2038,12 +2182,49 @@ async function startServer() {
 
     try {
       appendLiveCallEvent(callSid, "user", customerText);
-      const rawReply = await getGeminiReply(callSid, customerText);
+      const session = liveCallSessions.get(callSid);
+      const history = getStoredHistory(callSid);
+      const leadDetails = extractLeadDetails(history, customerText);
+      if (leadDetails.email || leadDetails.leadName !== "Lead") {
+        updateLiveCallSession(callSid, {
+          leadEmail: leadDetails.email || session?.leadEmail || "",
+          leadName: leadDetails.leadName !== "Lead" ? leadDetails.leadName : session?.leadName || "",
+        });
+      }
+
+      let rawReply = "";
+      try {
+        rawReply = await maybeHandleSchedulingFlow({
+          sessionId: callSid,
+          history,
+          customerText,
+          calendarToken: session?.calendarToken || "",
+          timeZone: "Asia/Calcutta",
+        });
+      } catch (calendarError) {
+        console.error("Twilio calendar automation failed:", calendarError);
+        const reason = readErrorMessage(calendarError).toLowerCase();
+        if (reason.includes("401") || reason.includes("invalid credentials") || reason.includes("invalid_grant")) {
+          rawReply = "The calendar connection expired. Please reconnect Google Calendar and I can book it right away.";
+        } else if (reason.includes("insufficient") || reason.includes("permission")) {
+          rawReply = "Calendar permission needs to include events access. Reconnect Google Calendar once, then I can lock the slot.";
+        } else {
+          rawReply = "I hit a quick calendar sync issue. Please confirm the date, time, and email once more and I will retry.";
+        }
+      }
+
+      if (rawReply) {
+        appendHistoryTurn(callSid, "user", customerText);
+        appendHistoryTurn(callSid, "model", rawReply);
+      } else {
+        rawReply = await getGeminiReply(callSid, customerText);
+      }
       const shouldEnd = rawReply.includes("[END_CALL]");
       const reply = rawReply.replace("[END_CALL]", "").trim();
       appendLiveCallEvent(callSid, "agent", reply || "Thanks for your time. Have a great day.");
 
       if (shouldEnd) {
+        void finalizeLiveCallSession(callSid);
         callHistories.delete(callSid);
         markLiveCallEnded(callSid);
         res.type("text/xml").send(twiml(`${say(reply || "Thanks for your time. Have a great day.")}<Hangup />`));
@@ -2077,6 +2258,7 @@ async function startServer() {
       );
       for (const sid of statusTargetSids) {
         if (["completed", "canceled", "busy", "failed", "no-answer"].includes(callStatus)) {
+          void finalizeLiveCallSession(sid);
           callHistories.delete(sid);
           markLiveCallEnded(sid);
         } else if (callStatus) {

@@ -644,10 +644,11 @@ export const LiveCall = () => {
     setDialerNotice({ tone: 'neutral', text: 'Starting outbound call...' });
 
     try {
+      const calendarToken = getCachedAccessToken() || undefined;
       const response = await fetch('/api/dialer/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ number }),
+        body: JSON.stringify({ number, calendarToken }),
       });
       const data = await response.json();
 

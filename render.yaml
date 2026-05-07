@@ -21,9 +21,9 @@ services:
       - key: TWILIO_GATHER_LANGUAGE
         value: en-IN
       - key: TWILIO_GATHER_TIMEOUT
-        value: 15
+        value: 8
       - key: TWILIO_GATHER_SPEECH_TIMEOUT
-        value: auto
+        value: 2
       - key: TWILIO_ENHANCED_SPEECH
         value: false
       - key: DIALER_MODE

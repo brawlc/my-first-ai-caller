@@ -8,6 +8,7 @@ const SCOPES = [
   'openid',
   'email',
   'profile',
+  'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/calendar.readonly'
 ].join(' ');

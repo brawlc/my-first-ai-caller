@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, Download, Search, MoreVertical, Plus, CalendarPlus, X, Pencil, Trash2, PhoneCall } from 'lucide-react';
 import { Lead } from '../types';
-import { createCalendarEvent, getAccessToken, isCalendarConfigured } from '../services/googleWorkspaceService';
+import { createCalendarEvent, getAccessToken, getCachedAccessToken, isCalendarConfigured } from '../services/googleWorkspaceService';
 
 type LeadStatus = Lead['status'];
 
@@ -349,10 +349,16 @@ export const LeadManager = () => {
     try {
       setCallingLeadId(lead.id);
       setCallStatus({ tone: 'neutral', text: `Starting call to ${lead.name}...` });
+      const calendarToken = getCachedAccessToken() || undefined;
       const response = await fetch('/api/dialer/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ number: phone }),
+        body: JSON.stringify({
+          number: phone,
+          calendarToken,
+          leadName: lead.name,
+          leadEmail: lead.email,
+        }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {

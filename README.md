@@ -63,6 +63,8 @@ In **Live Agent** chat, Pooja can also automate scheduling:
 - checks if the slot is available
 - if busy, suggests an alternate slot on the same day
 - books automatically after the lead confirms
+- for real Twilio calls, pass the connected Google token from the app so Pooja can book during the phone call
+- after a real call ends, Pooja sends the captured call details to the lead email through Gmail when `gmail.send` permission is available
 
 ## Android Gateway
 
