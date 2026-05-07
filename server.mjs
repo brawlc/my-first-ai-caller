@@ -905,7 +905,8 @@ function isThinNonAnswer(replyText) {
   const reply = String(replyText || "").trim();
   return (
     reply.length < 28 ||
-    /^(understood|okay|ok|sure|got it|makes sense|alright)[.!]*$/i.test(reply)
+    /^(understood|okay|ok|sure|got it|makes sense|alright)[.!]*$/i.test(reply) ||
+    /^[A-Za-z]+'?$/.test(reply)
   );
 }
 
@@ -917,7 +918,11 @@ async function getGeminiReply(callSid, customerText) {
   const languageInstruction = settings.promptLanguage
     ? `\n\nCurrent call language and voice pack: ${settings.label || settings.language}. Reply in ${settings.promptLanguage}. Keep the same phone-call style and do not translate the company name DP vision Analytics.`
     : "";
-  const userText = String(customerText || "").trim();
+  let userText = String(customerText || "").trim();
+  const correctionMatch = userText.match(/^\s*i\s+said\s+(.+)$/i);
+  if (correctionMatch?.[1]) {
+    userText = correctionMatch[1].trim();
+  }
 
   if (!ai) {
     lastGeminiError = "GEMINI_API_KEY is missing.";
@@ -955,6 +960,21 @@ async function getGeminiReply(callSid, customerText) {
       callSid,
       openerContext
         .concat([{ role: "user", text: userText }, { role: "model", text: wellbeingReply }])
+        .slice(-MAX_HISTORY_TURNS)
+    );
+    return wellbeingReply;
+  }
+
+  if (isStandaloneWellbeingAnswer(userText) && asksAboutAgentWellbeing(userText)) {
+    const openerContext = [{ role: "model", text: "Hi, this is Pooja from DP vision Analytics. How are you doing today?" }];
+    const wellbeingReply = removeRepeatedIntroduction(
+      normalizeCompanyName(getLocalAgentReply(userText, openerContext)),
+      openerContext
+    );
+    callHistories.set(
+      callSid,
+      conversation
+        .concat([{ role: "model", text: wellbeingReply }])
         .slice(-MAX_HISTORY_TURNS)
     );
     return wellbeingReply;
@@ -2059,7 +2079,9 @@ async function startServer() {
       const lastUserTurn =
         [...normalizedHistory].reverse().find((entry) => entry.role === "user") ||
         [...normalizeHistory(rawIncomingHistory.slice(-1))].reverse().find((entry) => entry.role === "user");
-      const customerText = lastUserTurn?.text || "";
+      const rawCustomerText = lastUserTurn?.text || "";
+      const correctionMatch = rawCustomerText.match(/^\s*i\s+said\s+(.+)$/i);
+      const customerText = correctionMatch?.[1]?.trim() || rawCustomerText;
       const callSid = `web-${Date.now()}`;
 
       if (looksLikeUnclearOrStrayInput(customerText)) {
@@ -2068,7 +2090,10 @@ async function startServer() {
       }
 
       if (isStandaloneWellbeingAnswer(customerText)) {
-        res.json({ text: normalizeCompanyName(getLocalAgentReply(customerText, rawIncomingHistory)) });
+        const wellbeingHistory = hasRecentlyExplainedDpVision(rawIncomingHistory)
+          ? rawIncomingHistory
+          : [{ role: "agent", text: "Hi, this is Pooja from DP vision Analytics. How are you doing today?" }];
+        res.json({ text: normalizeCompanyName(getLocalAgentReply(customerText, wellbeingHistory)) });
         return;
       }
 
