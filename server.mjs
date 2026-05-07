@@ -727,6 +727,16 @@ function asksAboutAgentWellbeing(text) {
   );
 }
 
+function hasRecentlyExplainedDpVision(history) {
+  return normalizeHistory(history)
+    .filter((entry) => entry.role === "model")
+    .slice(-3)
+    .some((entry) =>
+      /\bDP vision\b/i.test(entry.text) &&
+      /\b(helps|builds|clean up|replace|CRM|ERP|automation|dashboard|reports|follow-ups)\b/i.test(entry.text)
+    );
+}
+
 function getLocalAgentReply(customerText, history = []) {
   const text = String(customerText || "").trim();
   const lower = text.toLowerCase();
@@ -753,6 +763,9 @@ function getLocalAgentReply(customerText, history = []) {
   }
 
   if (isAcknowledgementOnly(lower)) {
+    if (hasRecentlyExplainedDpVision(history)) {
+      return "Makes sense. Are scattered follow-ups or reports something your team is dealing with right now?";
+    }
     return "Sure. In simple terms, DP vision helps businesses replace scattered tracking with one clearer system for customers, operations, and reports.";
   }
 
@@ -921,6 +934,17 @@ async function getGeminiReply(callSid, customerText) {
         .slice(-MAX_HISTORY_TURNS)
     );
     return wellbeingReply;
+  }
+
+  if (isAcknowledgementOnly(userText) && hasRecentlyExplainedDpVision(conversation)) {
+    const acknowledgementReply = normalizeCompanyName(getLocalAgentReply(userText, conversation));
+    callHistories.set(
+      callSid,
+      conversation
+        .concat([{ role: "model", text: acknowledgementReply }])
+        .slice(-MAX_HISTORY_TURNS)
+    );
+    return acknowledgementReply;
   }
 
   const candidates = await ensureModelCandidates();
