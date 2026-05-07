@@ -677,7 +677,7 @@ function countAgentQuestions(history) {
 
 function isMixedIntent(text) {
   const lower = String(text || "").trim().toLowerCase();
-  return /\b(no|not sure|maybe)\b.*\b(but|okay|ok|fine|go ahead|tell me|continue|still|maybe|sure)\b/i.test(lower);
+  return /\b(no|not really|not sure|maybe)\b.*\b(but|okay|ok|fine|go ahead|tell me|continue|still|maybe|sure)\b/i.test(lower);
 }
 
 function isClearRejection(text) {
@@ -782,6 +782,9 @@ function getLocalAgentReply(customerText, history = []) {
   }
 
   if (isMixedIntent(lower)) {
+    if (asksForMoreInformation(text)) {
+      return "No worries. In simple terms, DP vision connects sales, operations, follow-ups, and reports into one custom system when separate tools get messy.";
+    }
     return "No problem, I will keep it brief. DP vision mainly helps teams clean up scattered tools and reports. A short demo can show the fit.";
   }
 
@@ -866,6 +869,20 @@ function isWeakDiscoveryReply(customerText, replyText, history) {
   return recentAgentText.some((previous) => previous && lowerReply === previous);
 }
 
+function asksForMoreInformation(text) {
+  return /\b(tell me more|more information|more info|explain|details first|information first|know more|share more|go on|continue)\b/i.test(
+    String(text || "").trim()
+  );
+}
+
+function isThinNonAnswer(replyText) {
+  const reply = String(replyText || "").trim();
+  return (
+    reply.length < 28 ||
+    /^(understood|okay|ok|sure|got it|makes sense|alright)[.!]*$/i.test(reply)
+  );
+}
+
 async function getGeminiReply(callSid, customerText) {
   const history = normalizeHistory(callHistories.get(callSid) || []);
   const { systemPrompt } = getPromptParts();
@@ -897,7 +914,9 @@ async function getGeminiReply(callSid, customerText) {
     conversation.length === 1 &&
     conversation[0]?.role === "user" &&
     conversation[0]?.text === userText &&
-    isWellbeingAnswer(userText);
+    isWellbeingAnswer(userText) &&
+    !asksForMoreInformation(userText) &&
+    !isMixedIntent(userText);
 
   if (firstTurnIsWellbeingAnswer) {
     const openerContext = [{ role: "model", text: "Hi, this is Pooja from DP vision Analytics. How are you doing today?" }];
@@ -947,6 +966,17 @@ async function getGeminiReply(callSid, customerText) {
     return acknowledgementReply;
   }
 
+  if (asksForMoreInformation(userText) && (isMixedIntent(userText) || hasRecentlyExplainedDpVision(conversation))) {
+    const infoReply = normalizeCompanyName(getLocalAgentReply(userText, conversation));
+    callHistories.set(
+      callSid,
+      conversation
+        .concat([{ role: "model", text: infoReply }])
+        .slice(-MAX_HISTORY_TURNS)
+    );
+    return infoReply;
+  }
+
   const candidates = await ensureModelCandidates();
   const errors = [];
 
@@ -971,7 +1001,10 @@ async function getGeminiReply(callSid, customerText) {
       const text = response.text?.trim();
       if (text) {
         const normalizedText = removeRepeatedIntroduction(normalizeCompanyName(text), conversation);
-        if (isWeakDiscoveryReply(userText, normalizedText, conversation)) {
+        if (
+          isWeakDiscoveryReply(userText, normalizedText, conversation) ||
+          (asksForMoreInformation(userText) && isThinNonAnswer(normalizedText))
+        ) {
           const fallbackText = removeRepeatedIntroduction(normalizeCompanyName(getLocalAgentReply(userText, conversation)), conversation);
           callHistories.set(
             callSid,
