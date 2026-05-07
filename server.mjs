@@ -696,6 +696,17 @@ function isAcknowledgementOnly(text) {
   );
 }
 
+function looksLikeUnclearOrStrayInput(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return false;
+  const hasCjk = /[\u3040-\u30ff\u3400-\u9fff]/u.test(raw);
+  const latinWords = raw.match(/[A-Za-z]{2,}/g) || [];
+  const conversationalWords = raw.match(
+    /\b(hi|hello|hey|yes|no|ok|okay|sure|tell|more|explain|book|schedule|demo|meeting|email|price|cost|crm|erp|automation|dashboard|report|reports|follow|follow-up|follow-ups|sales|operation|operations|business|team|company|busy|later|callback|interested|not|really|good|fine|how|you|thanks)\b/gi
+  ) || [];
+  return hasCjk && conversationalWords.length === 0 && latinWords.length < 3;
+}
+
 function isDemoConsent(text) {
   const lower = String(text || "").trim().toLowerCase();
   return (
@@ -721,6 +732,11 @@ function isWellbeingAnswer(text) {
   );
 }
 
+function isStandaloneWellbeingAnswer(text) {
+  const lower = String(text || "").trim().toLowerCase();
+  return /^(i'?m\s+)?(doing\s+)?(good|great|fine|well|not bad|alright|all good|bad|busy|tired)(\s*(,|and)?\s*(how about you|what about you|and you|\?))?[\s.!?]*$/i.test(lower);
+}
+
 function asksAboutAgentWellbeing(text) {
   return /\b(how\s+(are|r)\s+(you|u)|how\s+about\s+(you|u)|what\s+about\s+(you|u)|and\s+(you|u)|you\?)\b/i.test(
     String(text || "").trim()
@@ -728,8 +744,14 @@ function asksAboutAgentWellbeing(text) {
 }
 
 function hasRecentlyExplainedDpVision(history) {
-  return normalizeHistory(history)
-    .filter((entry) => entry.role === "model")
+  if (!Array.isArray(history)) return false;
+  return history
+    .map((entry) => {
+      const rawRole = String(entry?.role || "").toLowerCase();
+      const role = rawRole === "model" || rawRole === "assistant" || rawRole === "agent" ? "model" : "user";
+      return { role, text: String(entry?.text || "").trim() };
+    })
+    .filter((entry) => entry.role === "model" && entry.text)
     .slice(-3)
     .some((entry) =>
       /\bDP vision\b/i.test(entry.text) &&
@@ -762,9 +784,13 @@ function getLocalAgentReply(customerText, history = []) {
     return "Hi, this is Pooja from DP vision Analytics. We build custom CRM, ERP, automation, and dashboard systems for growing teams. Is this relevant for your business?";
   }
 
+  if (looksLikeUnclearOrStrayInput(text)) {
+    return "Sorry, I caught something unclear there. Could you say that once more?";
+  }
+
   if (isAcknowledgementOnly(lower)) {
     if (hasRecentlyExplainedDpVision(history)) {
-      return "Makes sense. Are scattered follow-ups or reports something your team is dealing with right now?";
+      return "Got it. Are scattered follow-ups or reports something your team is dealing with right now?";
     }
     return "Sure. In simple terms, DP vision helps businesses replace scattered tracking with one clearer system for customers, operations, and reports.";
   }
@@ -884,7 +910,8 @@ function isThinNonAnswer(replyText) {
 }
 
 async function getGeminiReply(callSid, customerText) {
-  const history = normalizeHistory(callHistories.get(callSid) || []);
+  const rawHistory = callHistories.get(callSid) || [];
+  const history = normalizeHistory(rawHistory);
   const { systemPrompt } = getPromptParts();
   const settings = getVoiceSettings();
   const languageInstruction = settings.promptLanguage
@@ -914,7 +941,7 @@ async function getGeminiReply(callSid, customerText) {
     conversation.length === 1 &&
     conversation[0]?.role === "user" &&
     conversation[0]?.text === userText &&
-    isWellbeingAnswer(userText) &&
+    isStandaloneWellbeingAnswer(userText) &&
     !asksForMoreInformation(userText) &&
     !isMixedIntent(userText);
 
@@ -955,8 +982,8 @@ async function getGeminiReply(callSid, customerText) {
     return wellbeingReply;
   }
 
-  if (isAcknowledgementOnly(userText) && hasRecentlyExplainedDpVision(conversation)) {
-    const acknowledgementReply = normalizeCompanyName(getLocalAgentReply(userText, conversation));
+  if (isAcknowledgementOnly(userText) && (hasRecentlyExplainedDpVision(conversation) || hasRecentlyExplainedDpVision(rawHistory))) {
+    const acknowledgementReply = normalizeCompanyName(getLocalAgentReply(userText, rawHistory));
     callHistories.set(
       callSid,
       conversation
@@ -966,8 +993,22 @@ async function getGeminiReply(callSid, customerText) {
     return acknowledgementReply;
   }
 
-  if (asksForMoreInformation(userText) && (isMixedIntent(userText) || hasRecentlyExplainedDpVision(conversation))) {
-    const infoReply = normalizeCompanyName(getLocalAgentReply(userText, conversation));
+  if (looksLikeUnclearOrStrayInput(userText)) {
+    const unclearReply = "Sorry, I caught something unclear there. Could you say that once more?";
+    callHistories.set(
+      callSid,
+      conversation
+        .concat([{ role: "model", text: unclearReply }])
+        .slice(-MAX_HISTORY_TURNS)
+    );
+    return unclearReply;
+  }
+
+  if (
+    asksForMoreInformation(userText) &&
+    (isMixedIntent(userText) || hasRecentlyExplainedDpVision(conversation) || hasRecentlyExplainedDpVision(rawHistory))
+  ) {
+    const infoReply = normalizeCompanyName(getLocalAgentReply(userText, rawHistory));
     callHistories.set(
       callSid,
       conversation
@@ -2000,10 +2041,31 @@ async function startServer() {
   app.post("/api/agent/respond", async (req, res) => {
     const { history = [], sessionId = "", calendarToken = "", timeZone = "" } = req.body || {};
     try {
+      const rawIncomingHistory = Array.isArray(history) ? history : [];
       const normalizedHistory = normalizeHistory(history);
-      const lastUserTurn = [...normalizedHistory].reverse().find((entry) => entry.role === "user");
+      const lastUserTurn =
+        [...normalizedHistory].reverse().find((entry) => entry.role === "user") ||
+        [...normalizeHistory(rawIncomingHistory.slice(-1))].reverse().find((entry) => entry.role === "user");
       const customerText = lastUserTurn?.text || "";
       const callSid = `web-${Date.now()}`;
+
+      if (looksLikeUnclearOrStrayInput(customerText)) {
+        res.json({ text: "Sorry, I caught something unclear there. Could you say that once more?" });
+        return;
+      }
+
+      if (isAcknowledgementOnly(customerText) && hasRecentlyExplainedDpVision(rawIncomingHistory)) {
+        res.json({ text: normalizeCompanyName(getLocalAgentReply(customerText, rawIncomingHistory)) });
+        return;
+      }
+
+      if (
+        asksForMoreInformation(customerText) &&
+        (isMixedIntent(customerText) || hasRecentlyExplainedDpVision(rawIncomingHistory))
+      ) {
+        res.json({ text: normalizeCompanyName(getLocalAgentReply(customerText, rawIncomingHistory)) });
+        return;
+      }
 
       callHistories.set(callSid, normalizedHistory);
       let schedulingReply = null;
