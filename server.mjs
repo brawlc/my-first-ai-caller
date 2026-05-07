@@ -721,6 +721,12 @@ function isWellbeingAnswer(text) {
   );
 }
 
+function asksAboutAgentWellbeing(text) {
+  return /\b(how\s+(are|r)\s+(you|u)|how\s+about\s+(you|u)|what\s+about\s+(you|u)|and\s+(you|u)|you\?)\b/i.test(
+    String(text || "").trim()
+  );
+}
+
 function getLocalAgentReply(customerText, history = []) {
   const text = String(customerText || "").trim();
   const lower = text.toLowerCase();
@@ -728,10 +734,15 @@ function getLocalAgentReply(customerText, history = []) {
   const offeredDemo = wasAsked(history, /10-minute demo|short demo|demo/i);
 
   if (wasAskedHowTheyAre(history) && isWellbeingAnswer(lower)) {
+    const reciprocal = asksAboutAgentWellbeing(text);
     if (/\b(bad|busy|tired|not good)\b/i.test(lower)) {
-      return "Sorry to hear that. I will keep this brief: DP vision helps businesses clean up scattered tools, reports, and follow-ups.";
+      return reciprocal
+        ? "Sorry to hear that. I'm doing fine, thanks for asking. DP vision helps clean up scattered tools and follow-ups."
+        : "Sorry to hear that. I will keep this brief: DP vision helps businesses clean up scattered tools, reports, and follow-ups.";
     }
-    return "Glad to hear. I will keep this brief: DP vision helps businesses clean up scattered tools, reports, and follow-ups.";
+    return reciprocal
+      ? "Glad to hear. I'm doing well too, thanks for asking. DP vision helps clean up scattered tools and follow-ups."
+      : "Glad to hear. I will keep this brief: DP vision helps businesses clean up scattered tools, reports, and follow-ups.";
   }
 
   if (!text || /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text)) {
