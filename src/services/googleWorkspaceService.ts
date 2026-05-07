@@ -29,7 +29,7 @@ async function resolveClientId(): Promise<string> {
 
   runtimeClientIdLoaded = true;
   try {
-    const response = await fetch('/api/runtime-config');
+    const response = await fetch('/api/runtime-config', { cache: 'no-store' });
     if (response.ok) {
       const payload = (await response.json()) as { clientId?: string };
       runtimeClientId = String(payload?.clientId || '').trim() || null;

@@ -1773,6 +1773,12 @@ async function startServer() {
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api/") || req.path === "/" || !path.extname(req.path)) {
+      res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+  });
 
   app.get("/api/agent-status", (_req, res) => {
     pruneAndroidSessions();

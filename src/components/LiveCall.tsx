@@ -148,6 +148,7 @@ export const LiveCall = () => {
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
   const [dialNumber, setDialNumber] = useState('');
   const [dialerStatus, setDialerStatus] = useState<DialerStatus>({});
+  const [dialerStatusLoaded, setDialerStatusLoaded] = useState(false);
   const [dialerNotice, setDialerNotice] = useState<DialerNotice | null>(null);
   const [isDialing, setIsDialing] = useState(false);
   const [livePhoneCallSid, setLivePhoneCallSid] = useState('');
@@ -336,7 +337,7 @@ export const LiveCall = () => {
 
   const loadStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/agent-status');
+      const response = await fetch('/api/agent-status', { cache: 'no-store' });
       if (!response.ok) return;
       setAgentStatus(await response.json());
     } catch (error) {
@@ -346,19 +347,21 @@ export const LiveCall = () => {
 
   const loadDialerStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/dialer/status');
+      const response = await fetch('/api/dialer/status', { cache: 'no-store' });
       if (!response.ok) return;
       setDialerStatus(await response.json());
+      setDialerStatusLoaded(true);
     } catch (error) {
       console.warn('Could not load dialer status', error);
+      setDialerStatusLoaded(true);
     }
   }, []);
 
   const loadLivePhoneCall = useCallback(async (callSid: string) => {
     try {
-      const response = await fetch(`/api/live-calls/${encodeURIComponent(callSid)}`);
+      const response = await fetch(`/api/live-calls/${encodeURIComponent(callSid)}`, { cache: 'no-store' });
       if (!response.ok) {
-        const latestResponse = await fetch('/api/live-calls/latest');
+        const latestResponse = await fetch('/api/live-calls/latest', { cache: 'no-store' });
         if (!latestResponse.ok) return;
         const latestData = (await latestResponse.json()) as LivePhoneCall;
         if (!latestData.callSid) return;
@@ -375,7 +378,7 @@ export const LiveCall = () => {
       let status = data.status || '';
 
       if (!events.length && data.status !== 'ended') {
-        const latestResponse = await fetch('/api/live-calls/latest');
+        const latestResponse = await fetch('/api/live-calls/latest', { cache: 'no-store' });
         if (latestResponse.ok) {
           const latestData = (await latestResponse.json()) as LivePhoneCall;
           if (latestData.callSid && latestData.callSid !== callSid) {
@@ -507,7 +510,7 @@ export const LiveCall = () => {
 
     const loadOpeningLine = async () => {
       try {
-        const response = await fetch('/api/agent-prompt');
+        const response = await fetch('/api/agent-prompt', { cache: 'no-store' });
         if (!response.ok) return;
         const promptText = await response.text();
         const firstLine = promptText
@@ -647,6 +650,7 @@ export const LiveCall = () => {
       const calendarToken = getCachedAccessToken() || undefined;
       const response = await fetch('/api/dialer/call', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ number, calendarToken }),
       });
@@ -757,13 +761,19 @@ export const LiveCall = () => {
         <form onSubmit={startOutboundCall} className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="flex-1">
             <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-xs font-bold uppercase tracking-wide text-zinc-300">SIP Dialer</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-zinc-300">
+                {(dialerStatus.mode || 'Twilio').toUpperCase()} Dialer
+              </p>
               <p
                 className={`text-[10px] font-mono uppercase ${
-                  dialerStatus.ready ? 'text-green-300' : 'text-amber-300'
+                  dialerStatus.ready ? 'text-green-300' : dialerStatusLoaded ? 'text-amber-300' : 'text-zinc-500'
                 }`}
               >
-                {dialerStatus.ready ? `${dialerStatus.mode || 'twilio'} ready` : 'config needed'}
+                {!dialerStatusLoaded
+                  ? 'checking'
+                  : dialerStatus.ready
+                    ? `${dialerStatus.mode || 'twilio'} ready`
+                    : 'config needed'}
               </p>
             </div>
             <input
