@@ -734,7 +734,7 @@ function isWellbeingAnswer(text) {
 
 function isStandaloneWellbeingAnswer(text) {
   const lower = String(text || "").trim().toLowerCase();
-  return /^(i'?m\s+)?(doing\s+)?(good|great|fine|well|not bad|alright|all good|bad|busy|tired)(\s*(,|and)?\s*(how about you|what about you|and you|\?))?[\s.!?]*$/i.test(lower);
+  return /^(i\s+am\s+|i'?m\s+)?(doing\s+)?(good|great|fine|well|not bad|alright|all good|bad|busy|tired)[\s.!?,]*(and\s+)?(how\s+(are|r)\s+(you|u)|how about (you|u)|what about (you|u)|and (you|u)|\?)?[\s.!?]*$/i.test(lower);
 }
 
 function asksAboutAgentWellbeing(text) {
@@ -1093,8 +1093,12 @@ function getLocalSentiment(text) {
 }
 
 function detectSchedulingIntent(text) {
-  return /\b(book|schedule|slot|meeting|calendar|demo|reschedule|tomorrow|today|day\s*-?\s*after\s*-?\s*tomorrow|am|pm|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|\d{1,2}[\/\-.]\d{1,2})\b/i.test(
-    text
+  const raw = String(text || "").trim();
+  if (!raw) return false;
+  if (isStandaloneWellbeingAnswer(raw) || asksAboutAgentWellbeing(raw)) return false;
+  return (
+    /\b(book|schedule|slot|meeting|calendar|demo|reschedule|tomorrow|today|day\s*-?\s*after\s*-?\s*tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|\d{1,2}[\/\-.]\d{1,2})\b/i.test(raw) ||
+    /\b(?:at\s*)?\d{1,2}(?::[0-5]\d)?\s*(am|pm)\b/i.test(raw)
   );
 }
 
@@ -1613,6 +1617,9 @@ async function maybeHandleSchedulingFlow({
   const tz = timeZone || "Asia/Calcutta";
   const text = String(customerText || "").trim();
   if (!text) return null;
+  if (isStandaloneWellbeingAnswer(text) || asksAboutAgentWellbeing(text)) {
+    return null;
+  }
 
   const existingState = schedulingStates.get(normalizedSessionId);
   const leadDetails = extractLeadDetails(history, text);
@@ -2057,6 +2064,11 @@ async function startServer() {
 
       if (looksLikeUnclearOrStrayInput(customerText)) {
         res.json({ text: "Sorry, I caught something unclear there. Could you say that once more?" });
+        return;
+      }
+
+      if (isStandaloneWellbeingAnswer(customerText)) {
+        res.json({ text: normalizeCompanyName(getLocalAgentReply(customerText, rawIncomingHistory)) });
         return;
       }
 
